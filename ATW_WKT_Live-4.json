@@ -1,0 +1,723 @@
+{
+  "name": "ATW_WKT_Live",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "=voxWznLb06HVvnOSi",
+        "offset": "={{ 0 }}",
+        "limit": 200
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        448,
+        16
+      ],
+      "id": "521e3b11-188a-4559-9e48-771861b5ffeb",
+      "name": "Get dataset items",
+      "credentials": {
+        "apifyApi": {
+          "id": "EAyKk7B1ZQwADDAC",
+          "name": "Apify account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "product",
+        "title": "={{ $json.Title }}",
+        "additionalFields": {
+          "body_html": "={{ $json['Body HTML'] }}",
+          "handle": "={{ $json.Handle }}",
+          "images": [
+            {
+              "src": "={{ $json[\"Image 1\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 2\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 3\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 4\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 5\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 6\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 7\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 8\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 9\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 10\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 11\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 12\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 13\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 14\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 15\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 16\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 17\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 18\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 19\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 20\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 21\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 22\"] }}"
+            },
+            {
+              "src": "={{ $json[\"Image 23\"] }}"
+            }
+          ],
+          "product_type": "={{ $json.Type }}",
+          "tags": "={{ $json.Tags }}",
+          "template_suffix": "produs_servicii_stoc",
+          "vendor": "Autoworld"
+        }
+      },
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        112
+      ],
+      "id": "03bb4303-b932-4edf-b269-6b0ad6154125",
+      "name": "Create a product",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "KU2N3c1rQr2C0rDE",
+          "name": "Shopify Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- settings you can tweak ----\nconst FIELD_PREFIX = 'Image ';   // -> Image 1, Image 2, ...\nconst START_INDEX  = 1;          // first field number\nconst MAX_IMAGES   = 30;         // cap how many to output\nconst DELETE_ORIGINAL_IMAGE_FIELDS = true; // remove images/Image Src/etc\n\n// ---- helpers ----\nconst EXT_OK = /\\.(jpe?g|png|webp|gif|avif|bmp|tiff)(\\?.*)?$/i;\nconst BLOCK  = [/\\/uploads\\/anpc/i, /anpc-(sal|sol)\\.png/i, /placeholder/i, /no-?image/i];\n\nfunction collectAllImageUrls(input) {\n  const out = [];\n  const seen = new Set();\n\n  const push = (u) => {\n    if (!u) return;\n    const s = String(u).trim().replace(/&amp;/g, '&');\n    if (!/^https?:\\/\\//i.test(s)) return;\n    if (!EXT_OK.test(s)) return;\n    if (BLOCK.some((re) => re.test(s))) return;\n    if (!seen.has(s)) { seen.add(s); out.push(s); }\n  };\n\n  const walk = (v) => {\n    if (v == null) return;\n\n    if (Array.isArray(v)) { v.forEach(walk); return; }\n\n    if (typeof v === 'object') {\n      // common keys\n      if (v.src || v.url || v.href) push(v.src || v.url || v.href);\n      Object.values(v).forEach(walk);\n      return;\n    }\n\n    if (typeof v === 'string') {\n      // try to parse JSON string of images if present\n      try { const parsed = JSON.parse(v); walk(parsed); return; } catch {}\n      // extract any image-like URLs from free text\n      const rx = /(https?:\\/\\/[^\\s\"'<>]+?\\.(?:jpe?g|png|webp|gif|avif|bmp|tiff)(?:\\?[^\\s\"'<>]*)?)/ig;\n      let m; while ((m = rx.exec(v))) push(m[1]);\n      return;\n    }\n  };\n\n  walk(input);\n  return out;\n}\n\n// ---- main ----\nreturn items.map(item => {\n  const rec = { ...item.json };\n\n  // look for images in the common places\n  const sources = [\n    rec['Image Src'], rec.images, rec.image, rec.photos, rec.photo, rec.gallery\n  ];\n\n  // gather, clean and cap\n  let urls = [];\n  sources.forEach(s => { urls = urls.concat(collectAllImageUrls(s)); });\n  urls = [...new Set(urls)].slice(0, MAX_IMAGES);\n\n  // write Image 1..N\n  urls.forEach((u, i) => {\n    rec[`${FIELD_PREFIX}${START_INDEX + i}`] = u;\n  });\n\n\n  // optionally remove original image fields so only split fields remain\n  if (DELETE_ORIGINAL_IMAGE_FIELDS) {\n    delete rec['Image Src'];\n    delete rec.images;\n    delete rec.image;\n    delete rec.photos;\n    delete rec.photo;\n    delete rec.gallery;\n  }\n\n  return { json: rec };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        16
+      ],
+      "id": "9ab95ced-837f-4c0c-ab29-73c4b99ee273",
+      "name": "Split images"
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "import json, re\nimport re\n\n\ndef slugify(text: str) -> str:\n    \"\"\"Convert text to URL-friendly slug format.\"\"\"\n    if not text:\n        return ''\n    cleaned = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')\n    return cleaned if cleaned else ''\n\ndef norm_drivetrain(s: str) -> str:\n    \"\"\"Normalize drivetrain information to standard format.\"\"\"\n    t = (s or '').lower()\n    if any(k in t for k in [\"4x4\",\"awd\",\"quattro\",\"4motion\",\"xdrive\",\"4matic\",\"integral\",\"automat\"]):\n        return \"4x4 (AWD)\"\n    if any(k in t for k in [\"fata\",\"fwd\",\"front\"]):\n        return \"2x4 (FWD)\"\n    if any(k in t for k in [\"spate\",\"rwd\",\"rear\",\"propulsie\"]):\n        return \"4x2 (RWD)\"\n    return \"\"\n\ndef transform_item(item: dict) -> dict:\n    \"\"\"\n    Transform a single car item from Autoworld format to Shopify CSV format.\n    \n    Args:\n        item (dict): Car data from Autoworld API\n        \n    Returns:\n        dict: Transformed data ready for Shopify import\n    \"\"\"\n    row = {}\n    \n    # Title and handle\n    title = item.get('title') or ''\n    stock_id = item.get('stockId') or ''\n    row['Title'] = title\n    base_slug = slugify(title) if title else slugify(f\"{item.get('brand','')} {item.get('model','')}\")\n    row['Handle'] = f\"{base_slug}-{stock_id}\" if base_slug and stock_id else (base_slug or stock_id)\n\n    # Variant SKU and ID\n    vin = item.get('vin') or item.get('VIN')\n    row['Variant SKU'] = vin if vin else stock_id\n    row['Variant ID'] = ''\n\n    # Vendor and dossier\n    row['Vendor'] = 'Autoworld'\n    row['Metafield: custom.nr_dos_ [single_line_text_field]'] = stock_id\n\n    # Pricing and no-VAT metafield\n    gross_price = item.get('priceEur')\n    row['Variant Price'] = str(gross_price) if gross_price is not None else ''\n    if gross_price is not None:\n        try:\n            gross_float = float(gross_price)\n            if gross_float > 0:\n                net = gross_float / 1.21\n                row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = f\"{net:.2f}\"\n            else:\n                row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = ''\n        except (ValueError, TypeError, ZeroDivisionError):\n            row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = ''\n    else:\n        row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = ''\n\n    # Type and tags\n    row['Type'] = item.get('body') or ''\n    tag_values = [\n        item.get('brand'), item.get('model'), item.get('year'),\n        item.get('fuel'), item.get('transmission'),\n        item.get('body'), item.get('color')\n    ]\n    row['Tags'] = ', '.join(str(t).strip() for t in tag_values if t)\n\n    # PRIMARY IMAGE - Extract first image from images array\n# PRIMARY IMAGE - only the first link\n\n    row['Image Src'] = item.get('images')\n    \n    \n    row['Image Alt Text'] = item.get('title')\n    row['Metafield: custom.cutie_viteze [single_line_text_field]'] = item.get('transmission')\n    # Model and brand metafields\n    model_raw = item.get('model') or ''\n    model_tokens = model_raw.split()\n    row['Metafield: custom.model [single_line_text_field]'] = ' '.join(model_tokens[:2]) if model_tokens else model_raw\n    row['Metafield: custom.marca [single_line_text_field]'] = item.get('brand') or ''\n\n    # Power metafields\n    hp = item.get('horsepower')\n    if hp is not None:\n        try:\n            hp_val = float(hp)\n            if hp_val > 0:\n                kw_val = hp_val * 0.7355\n                row['Metafield: custom.putere_kw [single_line_text_field]'] = str(int(round(kw_val)))\n                row['Metafield: custom.putere_cp [single_line_text_field]'] = str(int(round(hp_val)))\n        except (ValueError, TypeError):\n            pass\n\n    # Drivetrain and other metafields\n    row['Metafield: custom.transmisie [list.single_line_text_field]'] = item.get('drivetrain')\n    row['Metafield: custom.tva [single_line_text_field]'] = item.get('vatType') or ''\n    disp = item.get('displacementCc')\n    row['Metafield: custom.cilindree [single_line_text_field]'] = str(disp) if disp else ''\n    row['Metafield: custom.culoare [single_line_text_field]'] = item.get('color') or ''\n\n    # Additional metafields\n    row['Metafield: custom.km [single_line_text_field]'] = str(item.get('mileageKm')) if item.get('mileageKm') is not None else ''\n    row['Metafield: custom.data_livrarii [single_line_text_field]'] = str(item.get('year')) if item.get('year') else ''\n    row['Metafield: custom.body_type [single_line_text_field]'] = item.get('body') or ''\n    row['Metafield: custom.fuel [single_line_text_field]'] = item.get('fuel') or ''\n\n    # Dotări aggregated string (features[0])\n    row['Metafield: custom.dotari [multi_line_text_field]'] = item.get('features')\n\n   \n    # Append extraDescription as a bullet\n    extra_desc = item.get('features')\n    \n    # Populate the Features column (comma-separated) to show the dotări in one field\n    row['Features'] = item.get('features')\n  \n    # BUILD COMPREHENSIVE BODY HTML\n    body_html_parts = []\n    \n    # Car overview\n    brand = item.get('brand', '')\n    model = item.get('model', '')\n    year = item.get('year', '')\n    \n    if brand or model or year:\n        overview = f\"<h3>{brand} {model}\".strip()\n        if year:\n            overview += f\" ({year})\"\n        overview += \"</h3>\"\n        body_html_parts.append(overview)\n        \n    # Technical specifications\n    tech_specs = []\n    if item.get('fuel'):\n        tech_specs.append(f\"<li><strong>Combustibil:</strong> {item.get('fuel')}</li>\")\n    if item.get('transmission'):\n        tech_specs.append(f\"<li><strong>Transmisie:</strong> {item.get('transmission')}</li>\")\n    if item.get('body'):\n        tech_specs.append(f\"<li><strong>Caroserie:</strong> {item.get('body')}</li>\")\n    if item.get('color'):\n        tech_specs.append(f\"<li><strong>Culoare:</strong> {item.get('color')}</li>\")\n    if item.get('displacementCc'):\n        tech_specs.append(f\"<li><strong>Cilindree:</strong> {item.get('displacementCc')} cm³</li>\")\n    if item.get('horsepower'):\n        tech_specs.append(f\"<li><strong>Putere:</strong> {item.get('horsepower')} CP</li>\")\n    \n    mileage = item.get('mileageKm')\n    if mileage is not None:\n        try:\n            mileage_val = float(mileage)\n            if mileage_val >= 0:\n                km_formatted = f\"{int(mileage_val):,}\".replace(\",\", \".\")\n                tech_specs.append(f\"<li><strong>Kilometraj:</strong> {km_formatted} km</li>\")\n        except (ValueError, TypeError):\n            tech_specs.append(f\"<li><strong>Kilometraj:</strong> {mileage} km</li>\")\n    \n    if item.get('drivetrain'):\n        drivetrain_norm = item.get('drivetrain')\n        if drivetrain_norm:\n            tech_specs.append(f\"<li><strong>Tracțiune:</strong> {drivetrain_norm}</li>\")\n    \n    if tech_specs:\n        body_html_parts.append(\"<h4>Specificații Tehnice:</h4>\")\n        body_html_parts.append(f\"<ul>{''.join(tech_specs)}</ul>\")\n    \n    # Features and equipment\n    if extra_desc:\n        body_html_parts.append(\"<h4>Dotări și Opțiuni:</h4>\")\n        features_html = item.get('features') \n        body_html_parts.append(f\"<ul>{features_html}</ul>\")\n    \n    # Additional info\n    additional_info = []\n    if item.get('vatType'):\n        additional_info.append(f\"<li><strong>TVA:</strong> {item.get('vatType')}</li>\")\n    if vin:\n        additional_info.append(f\"<li><strong>VIN:</strong> {vin}</li>\")\n    if stock_id:\n        additional_info.append(f\"<li><strong>Cod stoc:</strong> {stock_id}</li>\")\n    \n    if additional_info:\n        body_html_parts.append(\"<h4>Informații Adiționale:</h4>\")\n        body_html_parts.append(f\"<ul>{''.join(additional_info)}</ul>\")\n\n    # Contact info\n    body_html_parts.append(\"\"\"\n    <div style=\"margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px;\">\n        <p><strong>Pentru mai multe informații contactați Autoworld!</strong></p>\n        <p>Toate vehiculele sunt verificate și pregătite pentru livrare.</p>\n    </div>\n    \"\"\")\n    \n    row['Body HTML'] = ''.join(body_html_parts)\n\n    return row\n\n# n8n entrypoint: transform all items\noutput = []\nfor in_item in items:\n    record = in_item.get('json', {})\n    output.append({'json': transform_item(record)})\nreturn output"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        16
+      ],
+      "id": "b150ebb7-f882-45f8-aa19-747822173085",
+      "name": "Normalize Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ddc4f1a9-402a-4a95-9878-6f165d173e67",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "update",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1776,
+        16
+      ],
+      "id": "0116089d-821a-4ec3-9215-29aef71bb2f1",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://cb6c17-2.myshopify.com/admin/api/2024-07/variants/{{ $json.variant_id }}.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.variant_update}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2672,
+        112
+      ],
+      "id": "dde3fc02-13b3-4a55-8183-39dc46f2da8d",
+      "name": "HTTP Request",
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Complete Fixed Version - Handles products without SKUs =====\n\n// ---------- Helpers ----------\nconst S = v => (v == null ? '' : String(v).trim());\nconst U = v => S(v).toUpperCase();\nconst money = v => {\n  if (v == null || v === '') return null;\n  const s = String(v).replace(/\\s/g, '').replace(',', '.');\n  const m = s.match(/-?\\d+(\\.\\d+)?/);\n  return m ? Number(m[0]).toFixed(2) : null;\n};\nconst asListString = val => JSON.stringify([ S(val) ]);\nconst cleanList = raw => {\n  const str = S(raw);\n  return str.replace(/\\s*\\n+\\s*/g, '\\n').replace(/\\s{2,}/g, ' ').replace(/,\\s*,+/g, ', ');\n};\nconst mapFuel = (raw) => {\n  const v = (raw || '').toLowerCase().trim();\n  const allowed = [\n    'Benzină','Benzină (Mild-Hybrid)','Diesel','Diesel (Mild-Hybrid)',\n    'Hybrid','Plug-in Hybrid','Electric','LPG'\n  ];\n  if (['benzina','benzină','gasoline','petrol'].includes(v)) return 'Benzină';\n  if (['benzina (mild-hybrid)','benzină (mild-hybrid)','mhev benzina','mhev benzină','mild hybrid benzina'].includes(v)) return 'Benzină (Mild-Hybrid)';\n  if (['diesel'].includes(v)) return 'Diesel';\n  if (['diesel (mild-hybrid)','mhev diesel','mild hybrid diesel'].includes(v)) return 'Diesel (Mild-Hybrid)';\n  if (['hybrid','full hybrid','hev'].includes(v)) return 'Hybrid';\n  if (['phev','plug-in hybrid','plugin hybrid'].includes(v)) return 'Plug-in Hybrid';\n  if (['electric','ev','bev'].includes(v)) return 'Electric';\n  if (['lpg','gaz','gpl'].includes(v)) return 'LPG';\n  return allowed.includes(raw) ? raw : 'Benzină';\n};\n\n// ---------- Process all input items (created products) ----------\nconst createdItems = $input.all();\nconst out = [];\n\nconsole.log('IN items:', createdItems.length);\n\n// Get all filtered items that contain the source data\nconst filteredItems = [];\ntry {\n  // Try to get the Filter node output which contains all the source data\n  filteredItems.push(...$('Filter').all());\n  console.log('Got filtered items:', filteredItems.length);\n} catch (e) {\n  console.log('Could not get Filter node data:', e.message);\n}\n\n// Build maps for matching: by SKU, by handle, and by title\nconst skuToSourceMap = new Map();\nconst handleToSourceMap = new Map();\nconst titleToSourceMap = new Map();\n\nfor (const item of filteredItems) {\n  const data = item.json || {};\n  \n  // Map by SKU if available\n  const sku = S(data['Variant SKU'] || data.variant_sku || data.sku || '');\n  if (sku) {\n    skuToSourceMap.set(sku, data);\n    console.log(`Mapped SKU \"${sku}\" to source data`);\n  }\n  \n  // Map by handle\n  const handle = S(data.Handle || data.handle || '');\n  if (handle) {\n    handleToSourceMap.set(handle, data);\n    console.log(`Mapped handle \"${handle}\" to source data`);\n  }\n  \n  // Map by title\n  const title = S(data.Title || data.title || '');\n  if (title) {\n    titleToSourceMap.set(title, data);\n    console.log(`Mapped title \"${title}\" to source data`);\n  }\n}\n\nconsole.log(`Source maps built: ${skuToSourceMap.size} SKUs, ${handleToSourceMap.size} handles, ${titleToSourceMap.size} titles`);\n\nfor (let i = 0; i < createdItems.length; i++) {\n  const created = createdItems[i].json || {};\n  const product_id = created.id;\n  const variant_id = created?.variants?.[0]?.id;\n  \n  if (!product_id || !variant_id) {\n    console.log(`ERROR: Missing product_id or variant_id for item ${i}`);\n    out.push({ json: { error: 'Missing product_id or variant_id', index: i, created } });\n    continue;\n  }\n  \n  // Get the SKU from the created product (might be null)\n  const createdSku = S(created?.variants?.[0]?.sku || '');\n  const createdHandle = S(created.handle || '');\n  const createdTitle = S(created.title || '');\n  \n  // Try to find matching source data by multiple methods\n  let row = {};\n  let matchMethod = 'none';\n  \n  // 1. Try SKU match first (if SKU exists)\n  if (createdSku && skuToSourceMap.has(createdSku)) {\n    row = skuToSourceMap.get(createdSku);\n    matchMethod = 'sku';\n    console.log(`Found source data for product ${product_id} by SKU \"${createdSku}\"`);\n  }\n  // 2. Try handle match\n  else if (createdHandle && handleToSourceMap.has(createdHandle)) {\n    row = handleToSourceMap.get(createdHandle);\n    matchMethod = 'handle';\n    console.log(`Found source data for product ${product_id} by handle \"${createdHandle}\"`);\n  }\n  // 3. Try title match\n  else if (createdTitle && titleToSourceMap.has(createdTitle)) {\n    row = titleToSourceMap.get(createdTitle);\n    matchMethod = 'title';\n    console.log(`Found source data for product ${product_id} by title \"${createdTitle}\"`);\n  }\n  // 4. Try index-based fallback (if all else fails)\n  else if (i < filteredItems.length) {\n    row = filteredItems[i]?.json || {};\n    matchMethod = 'index';\n    console.log(`Using index-based match for product ${product_id} (fallback)`);\n  }\n  else {\n    console.log(`WARNING: No source data found for product ${product_id}`);\n    matchMethod = 'none';\n  }\n\n  // Get the variant SKU from source data or use what's in the created product\n  const variant_sku = S(row['Variant SKU'] || row.variant_sku || row.sku || createdSku || '');\n  const variant_price = money(row['Variant Price'] || row.variant_price);\n\n  // Build meta_blueprint only if we have source data\n  let bp = {};\n  if (Object.keys(row).length > 0 && matchMethod !== 'none') {\n    bp = {\n      // Mirrors\n      sku:            { type: 'single_line_text_field', value: variant_sku },\n      price_gross:    { type: 'number_decimal',         value: money(row['Variant Price']) },\n      pret_fara_tva:  { type: 'number_decimal',         value: money(row['Metafield: custom.pret_fara_tva [single_line_text_field]']) },\n      currency:       { type: 'single_line_text_field', value: 'RON' },\n\n      // Business attributes\n      nr_dos_:        { type: 'single_line_text_field', value: S(row['Metafield: custom.nr_dos_ [single_line_text_field]']) },\n      model:          { type: 'single_line_text_field', value: S(row['Metafield: custom.model [single_line_text_field]']) },\n      marca:          { type: 'single_line_text_field', value: S(row['Metafield: custom.marca [single_line_text_field]']) },\n      putere_kw:      { type: 'single_line_text_field', value: S(row['Metafield: custom.putere_kw [single_line_text_field]']) },\n      putere_cp:      { type: 'single_line_text_field', value: S(row['Metafield: custom.putere_cp [single_line_text_field]']) },\n\n      // transmisie + fuel will be overwritten below with correct types/values\n      transmisie:     { type: 'single_line_text_field', value: S(row['Metafield: custom.transmisie [list.single_line_text_field]']) },\n      tva:            { type: 'single_line_text_field', value: S(row['Metafield: custom.tva [single_line_text_field]']) },\n      cilindree:      { type: 'single_line_text_field', value: S(row['Metafield: custom.cilindree [single_line_text_field]']) },\n      cutie_viteze:   { type: 'single_line_text_field', value: S(row['Metafield: custom.cutie_viteze [single_line_text_field]']) },\n      culoare:        { type: 'single_line_text_field', value: S(row['Metafield: custom.culoare [single_line_text_field]']) },\n      kilometraj:     { type: 'single_line_text_field', value: S(row['Metafield: custom.km [single_line_text_field]']) },\n      data_livrarii:  { type: 'single_line_text_field', value: S(row['Metafield: custom.data_livrarii [single_line_text_field]']) },\n      body_type:      { type: 'single_line_text_field', value: S(row['Metafield: custom.body_type [single_line_text_field]']) },\n      fuel:           { type: 'single_line_text_field', value: S(row['Metafield: custom.fuel [single_line_text_field]']) },\n      dotari:         { type: 'multi_line_text_field',\n                        value: Array.isArray(row['Metafield: custom.dotari [multi_line_text_field]'])\n                          ? cleanList(row['Metafield: custom.dotari [multi_line_text_field]'].join(', '))\n                          : cleanList(row['Metafield: custom.dotari [multi_line_text_field]'] || '') }\n    };\n\n    // === Enforce store definitions to avoid GraphQL userErrors ===\n    // 1) transmisie is a list.single_line_text_field → JSON array string\n    const rawTransmisie =\n      row['Metafield: custom.transmisie [list.single_line_text_field]'] ||\n      row.transmisie || bp.transmisie?.value;\n    if (rawTransmisie) {\n      bp.transmisie = {\n        type: 'list.single_line_text_field',\n        value: asListString(rawTransmisie)\n      };\n    }\n\n    // 2) fuel must match allowed choices\n    const rawFuel =\n      row['Metafield: custom.fuel [single_line_text_field]'] ||\n      row.fuel || bp.fuel?.value;\n    if (rawFuel) {\n      bp.fuel = {\n        type: 'single_line_text_field',\n        value: mapFuel(rawFuel)\n      };\n    }\n  }\n\n  // Only create metafields if we have data\n  const metafields = Object.entries(bp)\n    .filter(([, def]) => def && def.value != null && def.value !== '')\n    .map(([key, def]) => ({\n      ownerId: `gid://shopify/Product/${product_id}`,\n      namespace: 'custom',\n      key,\n      type: def.type,\n      value: String(def.value)\n    }));\n\n  // Only create variant update if we have SKU or price\n  const variant_update = {};\n  if (variant_sku || variant_price) {\n    variant_update.variant = {\n      id: variant_id,\n      ...(variant_sku   ? { sku: variant_sku }   : {}),\n      ...(variant_price ? { price: variant_price } : {})\n    };\n  }\n\n  const graphql_body = metafields.length > 0 ? {\n    query: `\n      mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {\n        metafieldsSet(metafields: $metafields) {\n          metafields { key namespace value }\n          userErrors { field message code }\n        }\n      }\n    `.trim(),\n    variables: { metafields }\n  } : null;\n\n  const graphql_body_passthrough = graphql_body;\n\n  out.push({\n    json: {\n      product_id,\n      variant_id,\n      variant_update: Object.keys(variant_update).length > 0 ? variant_update : null,\n      graphql_body,\n      graphql_body_passthrough,\n      source_sku: variant_sku,\n      source_index: i,\n      has_source_data: Object.keys(row).length > 0,\n      match_method: matchMethod,\n      created_title: createdTitle,\n      created_handle: createdHandle\n    }\n  });\n}\n\nconsole.log('OUT items:', out.length);\nconsole.log('Summary:', out.map(item => ({\n  product: item.json.product_id,\n  match: item.json.match_method,\n  has_data: item.json.has_source_data,\n  sku: item.json.source_sku || 'NO_SKU'\n})));\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        112
+      ],
+      "id": "bf021a55-37bb-41b5-962a-54d04bc9e3a1",
+      "name": "Normalize incoming row"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$(\"Normalize incoming row\").item.json.graphql_body_passthrough}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2896,
+        112
+      ],
+      "id": "f4ea3d11-0df8-4d46-804c-02162357f6c6",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2448,
+        112
+      ],
+      "id": "74978332-971c-48e6-ac8d-e58478ccc8f7",
+      "name": "Wait",
+      "webhookId": "da50a9ad-22fb-4573-b44f-6b2f63a7a520"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"query\": \"{ products(first: 250, query: \\\"vendor:Autoworld status:active\\\") { edges { node { id title handle publishedAt variants(first: 250) { edges { node { id sku title price compareAtPrice } } } } } } }\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1088,
+        16
+      ],
+      "id": "c25e61b7-f924-40b9-987d-6812e8eccb74",
+      "name": "Shopify Get"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Safer Filter: SKU comparison with normalization and duplicate detection\n\nconst gidNum = (gid) => String(gid || '').split('/').pop();\n\n// Normalize SKU consistently on BOTH sides\nconst normalizeSKU = (raw) => {\n  if (raw == null) return '';\n  return String(raw)\n    .normalize('NFKC')                // unify Unicode forms\n    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '') // strip zero-widths\n    .replace(/\\s+/g, '')              // remove all whitespace\n    .trim()\n    .toUpperCase();                   // case-insensitive match\n};\n\nconsole.log(\"=== SAFER FILTER: NORMALIZED SKU COMPARISON ===\");\n\n// 1) Get Shopify data (input to this node)\nconst shopifyResults = $input.all().map(i => i.json);\nconsole.log(`Shopify results received: ${shopifyResults.length}`);\n\n// 2) Build normalized SKU index with variant IDs from Shopify GraphQL response\nconst skuIndex = new Map();          // key: skuKey → primary entry\nconst duplicateIndex = new Map();    // key: skuKey → array of ALL entries (for conflicts)\nlet totalExistingSKUs = 0;\n\nfor (const result of shopifyResults) {\n  const productsData = result?.data?.products;\n  if (!productsData) {\n    console.log(`⚠️ No products data found in result`);\n    continue;\n  }\n\n  const productEdges = productsData.edges ?? [];\n  console.log(`Processing ${productEdges.length} products from Shopify GraphQL`);\n\n  for (const productEdge of productEdges) {\n    const product = productEdge.node;\n    if (!product) continue;\n\n    const productId = gidNum(product.id);\n    const productTitle = product.title || 'Unknown';\n    const vendor = product.vendor || '';\n    const handle = product.handle || (productTitle.toLowerCase().replace(/\\s+/g, '-') || '');\n\n    const variantEdges = product.variants?.edges ?? [];\n    console.log(`  Product \"${productTitle}\" (${vendor}) has ${variantEdges.length} variants`);\n\n    for (const variantEdge of variantEdges) {\n      const variant = variantEdge.node;\n      if (!variant) continue;\n\n      const variantId = gidNum(variant.id);\n      const skuRaw = variant.sku ? String(variant.sku).trim() : '';\n      const skuKey = normalizeSKU(skuRaw);\n      const variantTitle = variant.title || '';\n\n      console.log(`    Variant: ID=\"${variantId}\", SKU_RAW=\"${skuRaw}\", SKU_KEY=\"${skuKey}\", Title=\"${variantTitle}\"`);\n\n      if (!skuKey || !variantId) {\n        console.log(`    ⚠️  Skipped variant: missing ${!skuKey ? 'normalized SKU' : 'variant ID'}`);\n        continue;\n      }\n\n      const entry = {\n        product_id: productId,\n        variant_id: variantId,\n        handle,\n        product_title: productTitle,\n        variant_title: variantTitle,\n        vendor,\n        sku_raw: skuRaw,\n        sku_key: skuKey\n      };\n\n      // Track all entries per key for conflict diagnostics\n      const arr = duplicateIndex.get(skuKey) || [];\n      arr.push(entry);\n      duplicateIndex.set(skuKey, arr);\n\n      // First one wins as the \"primary\" for compatibility with downstream logic\n      if (!skuIndex.has(skuKey)) {\n        skuIndex.set(skuKey, entry);\n      } else {\n        // We still keep first as primary, but we'll flag conflicts later\n        console.log(`    ⚠️  Duplicate SKU detected for key \"${skuKey}\" (keeping first as primary)`);\n      }\n\n      totalExistingSKUs++;\n    }\n  }\n}\n\nconsole.log(`Built SKU index (normalized): ${totalExistingSKUs} variant SKUs from Shopify`);\n\n// 3) Get incoming products from \"Split images\"\nlet incomingProducts = [];\ntry {\n  const splitImagesItems = $('Split images').all();\n  incomingProducts = splitImagesItems.map(item => item.json);\n  console.log(`✅ Found ${incomingProducts.length} products from Split images`);\n} catch (error) {\n  console.log(`⚠️  Could not access Split images data: ${error.message}`);\n  console.log(`Attempting fallback data retrieval...`);\n  return [{\n    json: {\n      error: \"Cannot access Split images data\",\n      shopify_skus_found: totalExistingSKUs,\n      debug_info: \"Filter node could not access incoming products for comparison\"\n    }\n  }];\n}\n\nconsole.log(`\\n=== PROCESSING ${incomingProducts.length} INCOMING PRODUCTS ===`);\n\nconst results = [];\n\n// 4) Process each incoming product with normalized comparison\nfor (let i = 0; i < incomingProducts.length; i++) {\n  const product = incomingProducts[i];\n\n  // Pull SKU from possible fields, then normalize\n  const skuRawIncoming = String(\n    product['Variant SKU'] ||\n    product.variant_sku ||\n    product.sku ||\n    product.SKU ||\n    ''\n  ).trim();\n\n  const skuKeyIncoming = normalizeSKU(skuRawIncoming);\n\n  console.log(`\\n--- PRODUCT ${i + 1}: ${product.Title || 'Unknown'} ---`);\n  console.log(`Incoming SKU_RAW=\"${skuRawIncoming}\", SKU_KEY=\"${skuKeyIncoming}\"`);\n\n  // Always pass through, even if no SKU\n  if (!skuKeyIncoming) {\n    console.log(`⚠️  No usable SKU found after normalization - will create without SKU`);\n    const result = {\n      ...product,\n      action: 'create',\n      sku_raw: skuRawIncoming,\n      sku_key: '',\n      no_sku_warning: true\n    };\n    results.push({ json: result });\n    continue;\n  }\n\n  const match = skuIndex.get(skuKeyIncoming);\n  const duplicates = duplicateIndex.get(skuKeyIncoming) || [];\n  const hasConflict = duplicates.length > 1;\n\n  if (match) {\n    // UPDATE path\n    const conflictVariantIds = hasConflict ? duplicates.map(d => d.variant_id) : [];\n    const result = {\n      ...product,\n      action: 'update',\n      shopify_product_id: match.product_id,\n      shopify_variant_id: match.variant_id,\n      shopify_handle: match.handle,\n      existing_product_title: match.product_title,\n      existing_variant_title: match.variant_title,\n      sku_raw: skuRawIncoming,\n      sku_key: skuKeyIncoming,\n      sku_conflict_warning: hasConflict || undefined,\n      sku_conflict_variants: hasConflict ? conflictVariantIds : undefined\n    };\n\n    results.push({ json: result });\n    console.log(`✅ UPDATE: Found existing variant ${match.variant_id} in product ${match.product_id}${hasConflict ? ' (DUPLICATE SKU KEY CONFLICT)' : ''}`);\n  } else {\n    // CREATE path\n    const result = {\n      ...product,\n      action: 'create',\n      sku_raw: skuRawIncoming,\n      sku_key: skuKeyIncoming\n    };\n    results.push({ json: result });\n    console.log(`✅ CREATE: SKU_KEY \"${skuKeyIncoming}\" not found in Shopify`);\n  }\n}\n\n// 5) Summary\nconsole.log(`\\n=== FILTER RESULTS ===`);\nconsole.log(`Total processed: ${results.length} products`);\n\nconst createCount = results.filter(r => r.json.action === 'create').length;\nconst updateCount = results.filter(r => r.json.action === 'update').length;\nconst noSkuCount  = results.filter(r => r.json.no_sku_warning).length;\nconst conflictCount = results.filter(r => r.json.sku_conflict_warning).length;\n\nconsole.log(`- ${createCount} products to CREATE`);\nconsole.log(`- ${updateCount} products to UPDATE`);\nif (noSkuCount > 0)  console.log(`- ${noSkuCount} products without usable SKU`);\nif (conflictCount > 0) console.log(`- ${conflictCount} UPDATEs flagged with DUPLICATE-SKU conflicts`);\n\nresults.forEach((r, index) => {\n  const item = r.json;\n  const action = item.action.toUpperCase();\n  const skuInfo = item.sku_raw ? ` (SKU_RAW: ${item.sku_raw} | KEY: ${item.sku_key})` : ' (NO SKU)';\n  const variantInfo = item.shopify_variant_id ? ` → variant: ${item.shopify_variant_id}` : '';\n  const conflictInfo = item.sku_conflict_warning ? ` [DUPLICATE-SKU: ${item.sku_conflict_variants?.join(', ')}]` : '';\n  console.log(`${index + 1}. ${item.Title || 'Untitled'}: ${action}${skuInfo}${variantInfo}${conflictInfo}`);\n});\n\nif (results.length === 0) {\n  console.log(`⚠️  WARNING: No results to pass forward!`);\n}\n\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        16
+      ],
+      "id": "3a642c6d-afe8-4f3d-b200-51fcf6edcae6",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "actorId": {
+          "__rl": true,
+          "value": "uvEVMlzMxgB6HI63D",
+          "mode": "id"
+        },
+        "memory": 2048
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        224,
+        16
+      ],
+      "id": "eae7fdda-440d-4cba-8503-94782a2228c3",
+      "name": "Run an Actor",
+      "credentials": {
+        "apifyApi": {
+          "id": "EAyKk7B1ZQwADDAC",
+          "name": "Apify account 2"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "/******************************************************\n * CHECK & PACK PRICE UPDATES (single Code node)\n * - Match by normalized SKU\n * - Resolve duplicate SKUs by Product ID, then Handle, then Title similarity\n * - Update price; set compareAtPrice ONLY if empty and old>new\n * - Output only items needing update\n * - Emits both `graphql_body` (Admin GraphQL) and `rest_body` (REST) per item\n ******************************************************/\n\nconst CONFIG = {\n  SHOPIFY_NODE: 'Shopify Get',      // GraphQL response node (must include price & compareAtPrice)\n  SOURCE_NODE:  'Split images',     // Your Apify/normalized items node\n  PRICE_DIFF_EPS: 0.009,            // ~1 cent tolerance\n  ALLOW_TITLE_FALLBACK: true,       // last-resort resolver for duplicate SKUs\n  TITLE_MATCH_MIN: 0.40,            // Jaccard threshold for title fallback\n  DEBUG: false                      // true => emits one diagnostic when nothing to update\n};\n\n/* ==================== helpers ==================== */\nconst normalizeSKU = (raw) => raw == null ? '' : String(raw)\n  .normalize('NFKC').replace(/[\\u200B-\\u200D\\uFEFF]/g, '')\n  .replace(/\\s+/g, '').trim().toUpperCase();\n\nconst toNum = (v) => {\n  if (v == null) return NaN;\n  const s = String(v).replace(/\\s/g, '').replace(',', '.');\n  const m = s.match(/-?\\d+(?:\\.\\d+)?/);\n  return m ? Number(m[0]) : NaN;\n};\nconst to2 = (n) => Number.isFinite(n) ? n.toFixed(2) : null;\nconst gidNum = (gid) => String(gid || '').split('/').pop();\nconst firstVal = (obj, keys) => { for (const k of keys) if (obj?.[k] != null && obj[k] !== '') return obj[k]; };\n\nconst tokenize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g,' ')\n  .trim().split(/\\s+/).filter(Boolean);\nconst jaccard = (a, b) => {\n  const A = new Set(tokenize(a)), B = new Set(tokenize(b));\n  if (!A.size || !B.size) return 0;\n  let inter = 0; for (const x of A) if (B.has(x)) inter++;\n  const uni = A.size + B.size - inter;\n  return inter / uni;\n};\nconst parseHandleFromUrl = (url) => {\n  const s = String(url || '');\n  const m = s.match(/\\/products\\/([a-z0-9\\-]+)/i);\n  return m ? m[1] : '';\n};\n\nconst readNode = (name) => { try { return $(name).all().map(x => x.json); } catch { return []; } };\nconst looksLikeShopify = (o) => !!(o?.data?.products?.edges || o?.products?.edges);\n\nfunction getShopifyPayloads() {\n  let items = readNode(CONFIG.SHOPIFY_NODE);\n  if (!items.length) items = $input.all().map(x => x.json);\n  const gql = items.filter(looksLikeShopify);\n  return gql.length ? gql : [];\n}\n\nfunction getSourceItems() {\n  let src = readNode(CONFIG.SOURCE_NODE);\n  if (src.length) return src;\n  const candidates = $input.all().map(x => x.json);\n  return candidates.filter(o => o && (\n    o['Variant SKU'] != null || o.variant_sku != null || o.sku != null || o.SKU != null\n  ));\n}\n\nfunction readVariantPrices(v) {\n  const p  = v?.price?.amount ?? v?.priceV2?.amount ?? v?.price;\n  const cp = v?.compareAtPrice?.amount ?? v?.compareAtPriceV2?.amount ?? v?.compareAtPrice;\n  return { price: toNum(p), compare: toNum(cp) };\n}\n\nfunction pickEntry(dups, prod) {\n  // 1) product id\n  const incomingIdRaw = firstVal(prod, ['Product ID','product_id','shopify_product_id','shopify_product_gid']);\n  const incomingIdNum = incomingIdRaw ? gidNum(String(incomingIdRaw)) : '';\n  if (incomingIdNum) {\n    const byId = dups.find(d => d.product_id_num === incomingIdNum);\n    if (byId) return byId;\n  }\n  // 2) handle (explicit or parsed from URL)\n  const incomingHandle = (firstVal(prod, ['Handle','handle','Product Handle','shopify_handle']) || '') ||\n                         parseHandleFromUrl(firstVal(prod, ['URL','Url','Link','Product URL','product_url']) || '');\n  if (incomingHandle) {\n    const byHandle = dups.find(d => d.handle === incomingHandle);\n    if (byHandle) return byHandle;\n  }\n  // 3) title similarity\n  if (CONFIG.ALLOW_TITLE_FALLBACK) {\n    const srcTitle = firstVal(prod, ['Product Title','Title','title']) || '';\n    let best = null, bestScore = -1;\n    for (const d of dups) {\n      const score = jaccard(srcTitle, d.product_title);\n      if (score > bestScore) { best = d; bestScore = score; }\n    }\n    if (best && bestScore >= CONFIG.TITLE_MATCH_MIN) return best;\n  }\n  return null;\n}\n\n/* ==================== 1) Index Shopify variants ==================== */\nconst shopifyPayloads = getShopifyPayloads();\nconst skuGroups = new Map(); // skuKey -> [entries]\nlet indexed = 0;\n\nfor (const root of shopifyPayloads) {\n  const edges = root?.data?.products?.edges ?? root?.products?.edges ?? [];\n  for (const pe of edges) {\n    const p = pe?.node; if (!p) continue;\n    const handle = p.handle || '';\n    const product_id_num = gidNum(p.id);\n\n    const vEdges = p?.variants?.edges ?? [];\n    for (const ve of vEdges) {\n      const v = ve?.node; if (!v) continue;\n\n      const skuKey = normalizeSKU(v.sku);\n      if (!skuKey) continue;\n\n      const { price, compare } = readVariantPrices(v);\n      const entry = {\n        variant_gid: String(v.id),\n        variant_id_num: gidNum(v.id),\n        product_id_num,\n        handle,\n        product_title: p.title || '',\n        variant_title: v.title || '',\n        existing_price: to2(price),            // strings or null\n        existing_compare_at: to2(compare)\n      };\n\n      const arr = skuGroups.get(skuKey) || [];\n      arr.push(entry);\n      skuGroups.set(skuKey, arr);\n\n      indexed++;\n    }\n  }\n}\n\n/* ==================== 2) Compare & emit only updates ==================== */\nconst incoming = getSourceItems();\nconst out = [];\n\nlet stats = {\n  seen: incoming.length,\n  noMatch: 0,\n  noPrice: 0,\n  duplicates: 0,\n  unresolvedDup: 0,\n  samePrice: 0,\n  emitted: 0,\n  resolvedById: 0,\n  resolvedByHandle: 0,\n  resolvedByTitle: 0\n};\n\nfor (const prod of incoming) {\n  const skuRaw = firstVal(prod, ['Variant SKU','variant_sku','sku','SKU']) || '';\n  const skuKey = normalizeSKU(skuRaw);\n\n  const incPrice = toNum(firstVal(prod, ['Variant Price','variant_price','price','Pret','pret']));\n  if (!skuKey) continue;\n  if (!Number.isFinite(incPrice)) { stats.noPrice++; continue; }\n\n  const group = skuGroups.get(skuKey) || [];\n  if (!group.length) { stats.noMatch++; continue; }\n\n  let chosen = null;\n  if (group.length === 1) {\n    chosen = group[0];\n  } else {\n    stats.duplicates++;\n    const picked = pickEntry(group, prod);\n    if (!picked) { stats.unresolvedDup++; continue; }\n    const incomingId = firstVal(prod, ['Product ID','product_id','shopify_product_id','shopify_product_gid']);\n    const incomingHandle = (firstVal(prod, ['Handle','handle','Product Handle','shopify_handle']) || '') ||\n                           parseHandleFromUrl(firstVal(prod, ['URL','Url','Link','Product URL','product_url']) || '');\n    if (incomingId) stats.resolvedById++;\n    else if (incomingHandle) stats.resolvedByHandle++;\n    else stats.resolvedByTitle++;\n    chosen = picked;\n  }\n\n  const existing = toNum(chosen.existing_price);\n  const changed = Number.isFinite(existing) ? Math.abs(incPrice - existing) > CONFIG.PRICE_DIFF_EPS : true;\n  if (!changed) { stats.samePrice++; continue; }\n\n  const priceStr = to2(incPrice);\n\n  // Respect existing compareAtPrice: only set if EMPTY and old>new\n  const existingCompareNum = toNum(chosen.existing_compare_at);\n  const hasCompareAt = Number.isFinite(existingCompareNum);\n  const shouldSetCAP = (!hasCompareAt && Number.isFinite(existing) && existing > incPrice);\n  const capStr = shouldSetCAP ? to2(existing) : undefined;\n\n  // -------- Build payloads --------\n  const graphql_body = {\n    query: `mutation productVariantUpdate($input: ProductVariantInput!) {\n      productVariantUpdate(input: $input) {\n        productVariant { id price { amount currencyCode } compareAtPrice { amount currencyCode } }\n        userErrors { field message }\n      }\n    }`,\n    variables: {\n      input: Object.assign(\n        { id: chosen.variant_gid, price: priceStr },\n        capStr ? { compareAtPrice: capStr } : {}\n      )\n    }\n  };\n\n  const rest_body = {\n    variant: Object.assign(\n      { id: Number(chosen.variant_id_num), price: priceStr },\n      capStr ? { compare_at_price: capStr } : {}\n    )\n  };\n\n  out.push({\n    json: {\n      action: 'update_price',\n      sku_raw: String(skuRaw).trim(),\n      sku_key: skuKey,\n      product_title: chosen.product_title,\n      variant_title: chosen.variant_title,\n      shopify_handle: chosen.handle,\n      shopify_product_id: chosen.product_id_num,\n      variant_gid: chosen.variant_gid,             // for GraphQL\n      variant_id: chosen.variant_id_num,           // for REST\n      existing_price: chosen.existing_price,       // old Shopify price (string or null)\n      existing_compare_at: chosen.existing_compare_at,\n      incoming_price: priceStr,                    // new price\n      old_price_used_as_compare_at: capStr || null,\n      graphql_body,\n      rest_body\n    }\n  });\n\n  stats.emitted++;\n}\n\n/* ==================== 3) Diagnostics when nothing emitted ==================== */\nif (!out.length && CONFIG.DEBUG) {\n  return [{\n    json: {\n      diagnostic: {\n        info: 'No items emitted; either prices are same, duplicates unresolved, or missing price/SKU.',\n        counts: {\n          shopify_variants_indexed: indexed,\n          source_items_seen: stats.seen,\n          duplicates_hit: stats.duplicates,\n          unresolved_duplicates: stats.unresolvedDup,\n          resolved_by_id: stats.resolvedById,\n          resolved_by_handle: stats.resolvedByHandle,\n          resolved_by_title: stats.resolvedByTitle,\n          skipped_no_match: stats.noMatch,\n          skipped_no_incoming_price: stats.noPrice,\n          same_price: stats.samePrice,\n          emitted_updates: stats.emitted\n        },\n        tips: [\n          'Ensure Shopify Get query includes: handle, variants { id sku title price { amount } compareAtPrice { amount } }',\n          'Send Product ID or Handle from source to break SKU ties deterministically.',\n          'Only items needing update are forwarded by design.'\n        ]\n      }\n    }\n  }];\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        -80
+      ],
+      "id": "d9626336-bd0a-4692-b31c-90808112edf7",
+      "name": "Check Price"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1072,
+        -288
+      ],
+      "typeVersion": 1,
+      "id": "a9f3f22d-a47c-4fb2-b044-ee799b215761",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  JSON.stringify({\n    query: `\n      mutation UpdatePrices($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {\n        productVariantsBulkUpdate(productId: $productId, variants: $variants) {\n          productVariants {\n            id\n            price\n            compareAtPrice\n          }\n          userErrors { field message }\n        }\n      }\n    `,\n    variables: {\n      // you already carry this as a numeric; build the GID\n      productId: `gid://shopify/Product/${$json.shopify_product_id}`,\n      variants: [\n        Object.assign(\n          {\n            id: $json.variant_gid,                      // gid://shopify/ProductVariant/...\n            price: String($json.incoming_price)         // \"48949.00\"\n          },\n          // only include compareAtPrice if your check-node decided to set it\n          $json.old_price_used_as_compare_at\n            ? { compareAtPrice: String($json.old_price_used_as_compare_at) }\n            : {}\n        )\n      ]\n    }\n  })\n}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        -80
+      ],
+      "id": "379e75c2-538f-401d-a083-d8e8aa25b488",
+      "name": "Update Price"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"query\": \"{ products(first: 250, query: \\\"vendor:Autoworld status:active\\\", sortKey: CREATED_AT, reverse: true) { edges { node { id title handle publishedAt variants(first: 250) { edges { node { id sku title price compareAtPrice } } } } } } }\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1088,
+        224
+      ],
+      "id": "0b8ab6b2-5097-466e-b5c6-07af4813e6a7",
+      "name": "Shopify Get1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1328,
+        32
+      ],
+      "id": "6f94e490-0dd5-4be6-8953-d1d160a6b9c7",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// COMPLETE FILTER WITH DEDUPLICATION\n// Handles: Deduplication from Split Images → CREATE/UPDATE/DEACTIVATE decisions\n// All outputs are unique (no duplicate SKUs)\n\nconst gidNum = (gid) => String(gid || '').split('/').pop();\n\nconst normalizeSKU = (raw) => {\n  if (raw == null) return '';\n  return String(raw)\n    .normalize('NFKC')\n    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')\n    .replace(/\\s+/g, '')\n    .trim()\n    .toUpperCase();\n};\n\n// ========== CONFIGURATION ==========\nconst INCLUDE_DEACTIVATIONS = true; // Set to false to skip deactivation outputs\nconst EXCLUDE_IMAGE_FIELDS = true; // Remove image fields from output\n\nconst IMAGE_FIELDS_TO_EXCLUDE = [\n  'image', 'images', 'Image', 'Images',\n  'product_image', 'variant_image',\n  'featuredImage', 'featured_image',\n  'image_url', 'imageUrl', 'image_src',\n  'Variant Image', 'Product Image'\n];\n// ===================================\n\n// Helper to remove image fields\nconst removeImageFields = (obj) => {\n  if (!EXCLUDE_IMAGE_FIELDS) return obj;\n  const cleaned = { ...obj };\n  IMAGE_FIELDS_TO_EXCLUDE.forEach(field => {\n    delete cleaned[field];\n  });\n  return cleaned;\n};\n\nconsole.log(\"=== COMPLETE FILTER WITH DEDUPLICATION ===\");\nconsole.log(`Configuration:`);\nconsole.log(`- Include Deactivations: ${INCLUDE_DEACTIVATIONS}`);\nconsole.log(`- Exclude Image Fields: ${EXCLUDE_IMAGE_FIELDS}`);\nconsole.log(\"\");\n\n// ============================================\n// STEP 1: Build Shopify SKU index (unique)\n// ============================================\nconst shopifyResults = $input.all().map(i => i.json);\nconst uniqueShopifySkus = new Map(); // Key: normalized SKU → Value: data\nlet totalShopifyProducts = 0;\nlet totalShopifyVariants = 0;\n\nconsole.log(\"📦 PROCESSING SHOPIFY DATA...\");\n\nfor (const result of shopifyResults) {\n  const productsData = result?.data?.products;\n  if (!productsData) continue;\n\n  const productEdges = productsData.edges ?? [];\n  totalShopifyProducts += productEdges.length;\n\n  for (const productEdge of productEdges) {\n    const product = productEdge.node;\n    if (!product) continue;\n\n    const productId = gidNum(product.id);\n    const productTitle = product.title || '';\n    const vendor = product.vendor || '';\n    const handle = product.handle || '';\n\n    const variantEdges = product.variants?.edges ?? [];\n    totalShopifyVariants += variantEdges.length;\n\n    for (const variantEdge of variantEdges) {\n      const variant = variantEdge.node;\n      if (!variant) continue;\n\n      const variantId = gidNum(variant.id);\n      const skuRaw = variant.sku ? String(variant.sku).trim() : '';\n      const skuKey = normalizeSKU(skuRaw);\n      \n      if (!skuKey || !variantId) continue;\n\n      // Store only first occurrence of each SKU\n      if (!uniqueShopifySkus.has(skuKey)) {\n        uniqueShopifySkus.set(skuKey, {\n          product_id: productId,\n          variant_id: variantId,\n          handle,\n          product_title: productTitle,\n          variant_title: variant.title || 'Default Title',\n          vendor,\n          sku_raw: skuRaw,\n          sku_key: skuKey,\n          price: variant.price || '',\n          inventory_quantity: variant.inventoryQuantity || 0\n        });\n      }\n    }\n  }\n}\n\nconsole.log(`  Shopify Products: ${totalShopifyProducts}`);\nconsole.log(`  Shopify Variants: ${totalShopifyVariants}`);\nconsole.log(`  Unique Shopify SKUs: ${uniqueShopifySkus.size}`);\n\n// ============================================\n// STEP 2: DEDUPLICATE Split Images data\n// ============================================\nconsole.log(\"\\n📥 PROCESSING SPLIT IMAGES DATA...\");\n\nlet incomingProductsRaw = [];\nconst uniqueIncomingProducts = new Map(); // Key: normalized SKU → Value: product data\nconst incomingSKUKeys = new Set(); // Track all unique incoming SKUs\nlet duplicatesFromImages = 0;\n\ntry {\n  const splitImagesItems = $('Split images').all();\n  incomingProductsRaw = splitImagesItems.map(item => item.json);\n  console.log(`  Raw records (with duplicates): ${incomingProductsRaw.length}`);\n} catch (error) {\n  console.log(`⚠️ Could not access Split Images data: ${error.message}`);\n  return [{\n    json: {\n      error: \"Cannot access Split images data\",\n      shopify_skus: uniqueShopifySkus.size\n    }\n  }];\n}\n\n// Deduplicate incoming products (keep first occurrence of each SKU)\nfor (const product of incomingProductsRaw) {\n  const skuRaw = String(\n    product['Variant SKU'] ||\n    product.variant_sku ||\n    product.sku ||\n    product.SKU ||\n    ''\n  ).trim();\n  \n  const skuKey = normalizeSKU(skuRaw);\n  \n  // For products without SKU, we'll use a unique identifier to avoid losing them\n  const uniqueKey = skuKey || `no_sku_${Math.random().toString(36).substr(2, 9)}`;\n  \n  if (skuKey && uniqueIncomingProducts.has(skuKey)) {\n    duplicatesFromImages++;\n  } else {\n    // Store the first occurrence\n    uniqueIncomingProducts.set(uniqueKey, {\n      ...removeImageFields(product),\n      sku_raw: skuRaw,\n      sku_key: skuKey\n    });\n    \n    if (skuKey) {\n      incomingSKUKeys.add(skuKey);\n    }\n  }\n}\n\nconsole.log(`  Duplicates removed: ${duplicatesFromImages}`);\nconsole.log(`  Unique products after dedup: ${uniqueIncomingProducts.size}`);\nconsole.log(`  Unique SKUs with values: ${incomingSKUKeys.size}`);\n\n// ============================================\n// STEP 3: Process CREATE/UPDATE actions\n// ============================================\nconsole.log(\"\\n🔄 DETERMINING ACTIONS...\");\n\nconst results = [];\nlet createCount = 0;\nlet updateCount = 0;\nlet noSkuCount = 0;\n\n// Process each unique incoming product\nfor (const [uniqueKey, product] of uniqueIncomingProducts.entries()) {\n  const skuKey = product.sku_key;\n  \n  if (!skuKey) {\n    // No SKU - create without SKU\n    results.push({\n      json: {\n        ...product,\n        action: 'create',\n        no_sku_warning: true\n      }\n    });\n    createCount++;\n    noSkuCount++;\n    continue;\n  }\n  \n  const match = uniqueShopifySkus.get(skuKey);\n  \n  if (match) {\n    // UPDATE - SKU exists in Shopify\n    results.push({\n      json: {\n        ...product,\n        action: 'update',\n        shopify_product_id: match.product_id,\n        shopify_variant_id: match.variant_id,\n        shopify_handle: match.handle,\n        existing_product_title: match.product_title,\n        existing_variant_title: match.variant_title\n      }\n    });\n    updateCount++;\n  } else {\n    // CREATE - SKU doesn't exist in Shopify\n    results.push({\n      json: {\n        ...product,\n        action: 'create'\n      }\n    });\n    createCount++;\n  }\n}\n\n// ============================================\n// STEP 4: Process DEACTIVATE actions\n// ============================================\nlet deactivateCount = 0;\n\nif (INCLUDE_DEACTIVATIONS) {\n  console.log(\"\\n🔍 FINDING DEACTIVATIONS...\");\n  \n  for (const [skuKey, shopifyData] of uniqueShopifySkus.entries()) {\n    if (!incomingSKUKeys.has(skuKey)) {\n      // This SKU exists in Shopify but NOT in incoming data\n      results.push({\n        json: {\n          action: 'deactivate',\n          shopify_product_id: shopifyData.product_id,\n          shopify_variant_id: shopifyData.variant_id,\n          shopify_handle: shopifyData.handle,\n          existing_product_title: shopifyData.product_title,\n          existing_variant_title: shopifyData.variant_title,\n          existing_vendor: shopifyData.vendor,\n          existing_price: shopifyData.price,\n          existing_inventory: shopifyData.inventory_quantity,\n          sku_raw: shopifyData.sku_raw,\n          sku_key: shopifyData.sku_key,\n          reason: 'SKU not found in Split Images'\n        }\n      });\n      deactivateCount++;\n    }\n  }\n}\n\n// ============================================\n// STEP 5: Summary\n// ============================================\nconsole.log(\"\\n===============================================\");\nconsole.log(\"📊 FINAL RESULTS SUMMARY\");\nconsole.log(\"===============================================\");\nconsole.log(\"INPUT:\");\nconsole.log(`  Split Images: ${incomingProductsRaw.length} raw → ${uniqueIncomingProducts.size} unique`);\nconsole.log(`  Shopify: ${totalShopifyVariants} variants → ${uniqueShopifySkus.size} unique SKUs`);\nconsole.log(\"\\nOUTPUT: \" + results.length + \" total records\");\nconsole.log(`  ✅ CREATE: ${createCount} (${noSkuCount} without SKU)`);\nconsole.log(`  🔄 UPDATE: ${updateCount}`);\nif (INCLUDE_DEACTIVATIONS) {\n  console.log(`  🔴 DEACTIVATE: ${deactivateCount}`);\n}\nconsole.log(\"===============================================\");\n\n// ============================================\n// STEP 6: Verify uniqueness\n// ============================================\nconst skuVerification = new Map();\nlet duplicateActions = 0;\n\nresults.forEach(item => {\n  const sku = item.json.sku_raw || item.json.sku_key;\n  if (sku) {\n    const action = item.json.action;\n    const key = `${sku}_${action}`;\n    if (skuVerification.has(key)) {\n      duplicateActions++;\n      console.log(`⚠️ Duplicate found: SKU \"${sku}\" with action \"${action}\"`);\n    }\n    skuVerification.set(key, true);\n  }\n});\n\nconsole.log(`\\n✅ Uniqueness Check: ${duplicateActions === 0 ? 'PASSED - All records unique' : `FAILED - ${duplicateActions} duplicates found`}`);\n\n// Show sample outputs\nif (results.length > 0) {\n  console.log(\"\\n📋 Sample outputs (first 5):\");\n  results.slice(0, 5).forEach((item, idx) => {\n    const d = item.json;\n    const title = d.Title || d.existing_product_title || 'Unknown';\n    console.log(`${idx + 1}. ${d.action.toUpperCase()}: ${title} (SKU: ${d.sku_raw || 'none'})`);\n  });\n  \n  if (results.length > 5) {\n    console.log(`... and ${results.length - 5} more records`);\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        352
+      ],
+      "id": "bbd4c442-170a-498e-a3e0-a2b4f3dab81f",
+      "name": "Filter1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  JSON.stringify({\n    query: `\n      mutation UpdatePrices($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {\n        productVariantsBulkUpdate(productId: $productId, variants: $variants) {\n          productVariants {\n            id\n            price\n            compareAtPrice\n          }\n          userErrors { field message }\n        }\n      }\n    `,\n    variables: {\n      // you already carry this as a numeric; build the GID\n      productId: `gid://shopify/Product/${$json.shopify_product_id}`,\n      variants: [\n        Object.assign(\n          {\n            id: $json.variant_gid,                      // gid://shopify/ProductVariant/...\n            price: String($json.incoming_price)         // \"48949.00\"\n          },\n          // only include compareAtPrice if your check-node decided to set it\n          $json.old_price_used_as_compare_at\n            ? { compareAtPrice: String($json.old_price_used_as_compare_at) }\n            : {}\n        )\n      ]\n    }\n  })\n}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2096,
+        352
+      ],
+      "id": "fcd467f6-a640-4833-ac4f-653ac3c5c0e0",
+      "name": "Update Price1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// DEDUPLICATION & DEACTIVATION FILTER\n// Handles duplicate SKUs from Split Images (multiple images per product)\n// Outputs ONLY unique SKUs that need deactivation\n\nconst gidNum = (gid) => String(gid || '').split('/').pop();\n\nconst normalizeSKU = (raw) => {\n  if (raw == null) return '';\n  return String(raw)\n    .normalize('NFKC')\n    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')\n    .replace(/\\s+/g, '')\n    .trim()\n    .toUpperCase();\n};\n\nconsole.log(\"=== DEDUPLICATION & DEACTIVATION FILTER ===\");\nconsole.log(\"Handling duplicate SKUs from image splitting...\\n\");\n\n// 1) Collect and DEDUPLICATE Shopify SKUs\nconst shopifyResults = $input.all().map(i => i.json);\nconst uniqueShopifySkus = new Map(); // Key: normalized SKU → Value: first occurrence data\nlet totalShopifyRecords = 0;\n\nfor (const result of shopifyResults) {\n  const productsData = result?.data?.products;\n  if (!productsData) continue;\n\n  const productEdges = productsData.edges ?? [];\n  \n  for (const productEdge of productEdges) {\n    const product = productEdge.node;\n    if (!product) continue;\n\n    const productId = gidNum(product.id);\n    const productTitle = product.title || '';\n    const vendor = product.vendor || '';\n    const handle = product.handle || '';\n\n    const variantEdges = product.variants?.edges ?? [];\n    \n    for (const variantEdge of variantEdges) {\n      const variant = variantEdge.node;\n      if (!variant) continue;\n      \n      totalShopifyRecords++;\n\n      const variantId = gidNum(variant.id);\n      const skuRaw = variant.sku ? String(variant.sku).trim() : '';\n      const skuKey = normalizeSKU(skuRaw);\n      \n      // Skip empty SKUs\n      if (!skuKey || !variantId) continue;\n\n      // Keep only FIRST occurrence of each unique SKU\n      if (!uniqueShopifySkus.has(skuKey)) {\n        uniqueShopifySkus.set(skuKey, {\n          sku: skuRaw,\n          product_id: productId,\n          variant_id: variantId,\n          product_title: productTitle,\n          variant_title: variant.title || 'Default Title',\n          vendor: vendor || '',\n          price: variant.price || '0',\n          inventory: variant.inventoryQuantity || 0,\n          handle: handle\n        });\n      }\n    }\n  }\n}\n\nconsole.log(`📊 SHOPIFY DATA:`);\nconsole.log(`  Total records processed: ${totalShopifyRecords}`);\nconsole.log(`  Unique SKUs found: ${uniqueShopifySkus.size}`);\n\n// 2) Collect and DEDUPLICATE incoming SKUs from Split Images\n// This is where we handle the duplication from multiple images per product\nconst incomingSkus = new Set();\nconst incomingFirstOccurrence = new Map(); // Track first occurrence of each SKU\nlet totalIncomingRecords = 0;\nlet duplicatesFromImages = 0;\n\ntry {\n  const splitImagesItems = $('Split images').all();\n  const incomingProducts = splitImagesItems.map(item => item.json);\n  totalIncomingRecords = incomingProducts.length;\n  \n  console.log(`\\n📥 SPLIT IMAGES DATA:`);\n  console.log(`  Total records (including duplicates from images): ${totalIncomingRecords}`);\n  \n  for (const product of incomingProducts) {\n    const skuRaw = String(\n      product['Variant SKU'] ||\n      product.variant_sku ||\n      product.sku ||\n      product.SKU ||\n      ''\n    ).trim();\n    \n    const skuKey = normalizeSKU(skuRaw);\n    if (skuKey) {\n      if (incomingSkus.has(skuKey)) {\n        duplicatesFromImages++;\n      } else {\n        // Store first occurrence data if needed\n        incomingFirstOccurrence.set(skuKey, {\n          title: product.Title || product.title || '',\n          sku: skuRaw\n        });\n      }\n      incomingSkus.add(skuKey);\n    }\n  }\n  \n  console.log(`  Duplicates from multiple images: ${duplicatesFromImages}`);\n  console.log(`  Unique SKUs after deduplication: ${incomingSkus.size}`);\n  \n} catch (error) {\n  console.log(`⚠️ Error accessing Split Images: ${error.message}`);\n  return [{\n    json: {\n      error: \"Cannot access Split Images data\"\n    }\n  }];\n}\n\n// 3) Find unique SKUs to deactivate (in Shopify but NOT in incoming)\nconst deactivateList = [];\nconst deactivateSkuSet = new Set(); // Track to ensure no duplicates in output\n\nfor (const [skuKey, data] of uniqueShopifySkus.entries()) {\n  if (!incomingSkus.has(skuKey)) {\n    // Only add if we haven't already added this SKU\n    if (!deactivateSkuSet.has(skuKey)) {\n      deactivateSkuSet.add(skuKey);\n      \n      deactivateList.push({\n        json: {\n          action: 'deactivate',\n          sku: data.sku,\n          product_id: data.product_id,\n          variant_id: data.variant_id,\n          product_title: data.product_title,\n          variant_title: data.variant_title,\n          vendor: data.vendor,\n          price: data.price,\n          inventory: data.inventory,\n          handle: data.handle\n        }\n      });\n    }\n  }\n}\n\n// 4) Summary\nconsole.log(\"\\n===============================================\");\nconsole.log(\"📊 DEACTIVATION SUMMARY\");\nconsole.log(\"===============================================\");\nconsole.log(`INPUT DEDUPLICATION:`);\nconsole.log(`  Split Images: ${totalIncomingRecords} records → ${incomingSkus.size} unique SKUs`);\nconsole.log(`  Reduction: ${totalIncomingRecords - incomingSkus.size} duplicate records removed`);\nconsole.log(`\\nCOMPARISON:`);\nconsole.log(`  Shopify unique SKUs: ${uniqueShopifySkus.size}`);\nconsole.log(`  Split Images unique SKUs: ${incomingSkus.size}`);\nconsole.log(`  Matching SKUs: ${uniqueShopifySkus.size - deactivateList.length}`);\nconsole.log(`\\n🔴 OUTPUT:`);\nconsole.log(`  UNIQUE SKUs to deactivate: ${deactivateList.length}`);\nconsole.log(`  (These exist in Shopify but NOT in Split Images)`);\nconsole.log(\"===============================================\");\n\n// 5) Show sample\nif (deactivateList.length > 0) {\n  console.log(\"\\n📋 First 3 SKUs to deactivate:\");\n  const sample = deactivateList.slice(0, 3);\n  \n  sample.forEach((item, idx) => {\n    const d = item.json;\n    console.log(`\\n${idx + 1}. SKU: \"${d.sku}\"`);\n    console.log(`   Product: ${d.product_title}`);\n    console.log(`   IDs: Product=${d.product_id}, Variant=${d.variant_id}`);\n  });\n  \n  if (deactivateList.length > 3) {\n    console.log(`\\n... plus ${deactivateList.length - 3} more unique SKUs`);\n  }\n}\n\n// 6) Final verification of uniqueness\nconst finalCheck = new Set();\nlet outputDuplicates = 0;\n\ndeactivateList.forEach(item => {\n  if (finalCheck.has(item.json.sku)) {\n    outputDuplicates++;\n  }\n  finalCheck.add(item.json.sku);\n});\n\nconsole.log(`\\n✅ UNIQUENESS VERIFICATION:`);\nconsole.log(`  Output contains ${deactivateList.length} records`);\nconsole.log(`  All SKUs are unique: ${outputDuplicates === 0 ? 'YES ✓' : 'NO ✗'}`);\n\nif (outputDuplicates > 0) {\n  console.log(`  ⚠️ WARNING: ${outputDuplicates} duplicates detected!`);\n}\n\nreturn deactivateList;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        352
+      ],
+      "id": "70a5091f-6435-4bab-ab6d-074d613b601e",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -48,
+        16
+      ],
+      "id": "d31395c9-e9cd-449e-89d1-93ad9cd5d1ef",
+      "name": "Schedule Trigger",
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get dataset items": {
+      "main": [
+        [
+          {
+            "node": "Normalize Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split images": {
+      "main": [
+        [
+          {
+            "node": "Shopify Get",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Data": {
+      "main": [
+        [
+          {
+            "node": "Split images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a product": {
+      "main": [
+        [
+          {
+            "node": "Normalize incoming row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Check Price",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize incoming row": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify Get": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Shopify Get1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run an Actor": {
+      "main": [
+        [
+          {
+            "node": "Get dataset items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        []
+      ]
+    },
+    "Check Price": {
+      "main": [
+        [
+          {
+            "node": "Update Price",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify Get1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter1": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Update Price1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Price1": {
+      "main": [
+        []
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run an Actor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "versionId": "82bfddbf-d8bd-460a-8ba7-0fa829d921e6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a475116152deda6f2c2c1c3fd012d112c549ea2ef1fbeb0897827b1b820b98ff"
+  },
+  "id": "yPnAbXlzw4woSQgF",
+  "tags": []
+}

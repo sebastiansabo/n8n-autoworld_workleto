@@ -1,0 +1,685 @@
+{
+  "name": "ATW_WKT_Live_OPTIMIZED",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -200,
+        400
+      ],
+      "id": "trigger-schedule",
+      "name": "Schedule Trigger",
+      "notes": "Runs every 15 minutes - optimized from 1 min to reduce API load",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "=voxWznLb06HVvnOSi",
+        "offset": "={{ 0 }}",
+        "limit": 200
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "id": "apify-get-dataset",
+      "name": "Get Apify Dataset",
+      "notes": "Fetch car inventory from Apify dataset",
+      "credentials": {
+        "apifyApi": {
+          "id": "EAyKk7B1ZQwADDAC",
+          "name": "Apify account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "import json, re\n\ndef slugify(text: str) -> str:\n    \"\"\"Convert text to URL-friendly slug format.\"\"\"\n    if not text:\n        return ''\n    cleaned = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')\n    return cleaned if cleaned else ''\n\ndef transform_item(item: dict) -> dict:\n    \"\"\"\n    Transform car item from Autoworld format to Shopify format.\n    Optimized with better error handling and validation.\n    \"\"\"\n    row = {}\n    \n    # Title and handle with fallback\n    title = item.get('title') or f\"{item.get('brand', '')} {item.get('model', '')}\".strip()\n    stock_id = item.get('stockId') or item.get('vin') or ''\n    row['Title'] = title\n    base_slug = slugify(title)\n    row['Handle'] = f\"{base_slug}-{stock_id}\" if base_slug and stock_id else (base_slug or stock_id)\n\n    # SKU - use VIN first, fallback to stockId\n    vin = item.get('vin') or item.get('VIN')\n    row['Variant SKU'] = vin if vin else stock_id\n    row['Variant ID'] = ''\n\n    # Vendor and metadata\n    row['Vendor'] = 'Autoworld'\n    row['Metafield: custom.nr_dos_ [single_line_text_field]'] = stock_id\n\n    # Pricing with validation\n    gross_price = item.get('priceEur')\n    row['Variant Price'] = str(gross_price) if gross_price is not None else ''\n    if gross_price is not None:\n        try:\n            gross_float = float(gross_price)\n            if gross_float > 0:\n                net = gross_float / 1.21\n                row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = f\"{net:.2f}\"\n            else:\n                row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = ''\n        except (ValueError, TypeError, ZeroDivisionError):\n            row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = ''\n    else:\n        row['Metafield: custom.pret_fara_tva [single_line_text_field]'] = ''\n\n    # Type and tags\n    row['Type'] = item.get('body') or ''\n    tag_values = [\n        item.get('brand'), item.get('model'), item.get('year'),\n        item.get('fuel'), item.get('transmission'),\n        item.get('body'), item.get('color')\n    ]\n    row['Tags'] = ', '.join(str(t).strip() for t in tag_values if t)\n\n    # Images - store as JSON array for later processing\n    row['Image Src'] = item.get('images')\n    row['Image Alt Text'] = title\n    \n    # Transmission and model\n    row['Metafield: custom.cutie_viteze [single_line_text_field]'] = item.get('transmission')\n    model_raw = item.get('model') or ''\n    model_tokens = model_raw.split()\n    row['Metafield: custom.model [single_line_text_field]'] = ' '.join(model_tokens[:2]) if model_tokens else model_raw\n    row['Metafield: custom.marca [single_line_text_field]'] = item.get('brand') or ''\n\n    # Power calculations\n    hp = item.get('horsepower')\n    if hp is not None:\n        try:\n            hp_val = float(hp)\n            if hp_val > 0:\n                kw_val = hp_val * 0.7355\n                row['Metafield: custom.putere_kw [single_line_text_field]'] = str(int(round(kw_val)))\n                row['Metafield: custom.putere_cp [single_line_text_field]'] = str(int(round(hp_val)))\n        except (ValueError, TypeError):\n            pass\n\n    # Additional metafields\n    row['Metafield: custom.transmisie [list.single_line_text_field]'] = item.get('drivetrain')\n    row['Metafield: custom.tva [single_line_text_field]'] = item.get('vatType') or ''\n    disp = item.get('displacementCc')\n    row['Metafield: custom.cilindree [single_line_text_field]'] = str(disp) if disp else ''\n    row['Metafield: custom.culoare [single_line_text_field]'] = item.get('color') or ''\n    row['Metafield: custom.km [single_line_text_field]'] = str(item.get('mileageKm')) if item.get('mileageKm') is not None else ''\n    row['Metafield: custom.data_livrarii [single_line_text_field]'] = str(item.get('year')) if item.get('year') else ''\n    row['Metafield: custom.body_type [single_line_text_field]'] = item.get('body') or ''\n    row['Metafield: custom.fuel [single_line_text_field]'] = item.get('fuel') or ''\n    row['Metafield: custom.dotari [multi_line_text_field]'] = item.get('features')\n    row['Features'] = item.get('features')\n  \n    # Build comprehensive Body HTML\n    body_html_parts = []\n    \n    brand = item.get('brand', '')\n    model = item.get('model', '')\n    year = item.get('year', '')\n    \n    if brand or model or year:\n        overview = f\"<h3>{brand} {model}\".strip()\n        if year:\n            overview += f\" ({year})\"\n        overview += \"</h3>\"\n        body_html_parts.append(overview)\n        \n    # Technical specifications\n    tech_specs = []\n    if item.get('fuel'):\n        tech_specs.append(f\"<li><strong>Combustibil:</strong> {item.get('fuel')}</li>\")\n    if item.get('transmission'):\n        tech_specs.append(f\"<li><strong>Transmisie:</strong> {item.get('transmission')}</li>\")\n    if item.get('body'):\n        tech_specs.append(f\"<li><strong>Caroserie:</strong> {item.get('body')}</li>\")\n    if item.get('color'):\n        tech_specs.append(f\"<li><strong>Culoare:</strong> {item.get('color')}</li>\")\n    if item.get('displacementCc'):\n        tech_specs.append(f\"<li><strong>Cilindree:</strong> {item.get('displacementCc')} cm³</li>\")\n    if item.get('horsepower'):\n        tech_specs.append(f\"<li><strong>Putere:</strong> {item.get('horsepower')} CP</li>\")\n    \n    mileage = item.get('mileageKm')\n    if mileage is not None:\n        try:\n            mileage_val = float(mileage)\n            if mileage_val >= 0:\n                km_formatted = f\"{int(mileage_val):,}\".replace(\",\", \".\")\n                tech_specs.append(f\"<li><strong>Kilometraj:</strong> {km_formatted} km</li>\")\n        except (ValueError, TypeError):\n            tech_specs.append(f\"<li><strong>Kilometraj:</strong> {mileage} km</li>\")\n    \n    if item.get('drivetrain'):\n        drivetrain_norm = item.get('drivetrain')\n        if drivetrain_norm:\n            tech_specs.append(f\"<li><strong>Tracțiune:</strong> {drivetrain_norm}</li>\")\n    \n    if tech_specs:\n        body_html_parts.append(\"<h4>Specificații Tehnice:</h4>\")\n        body_html_parts.append(f\"<ul>{''.join(tech_specs)}</ul>\")\n    \n    # Features\n    extra_desc = item.get('features')\n    if extra_desc:\n        body_html_parts.append(\"<h4>Dotări și Opțiuni:</h4>\")\n        features_html = item.get('features') \n        body_html_parts.append(f\"<ul>{features_html}</ul>\")\n    \n    # Additional info\n    additional_info = []\n    if item.get('vatType'):\n        additional_info.append(f\"<li><strong>TVA:</strong> {item.get('vatType')}</li>\")\n    if vin:\n        additional_info.append(f\"<li><strong>VIN:</strong> {vin}</li>\")\n    if stock_id:\n        additional_info.append(f\"<li><strong>Cod stoc:</strong> {stock_id}</li>\")\n    \n    if additional_info:\n        body_html_parts.append(\"<h4>Informații Adiționale:</h4>\")\n        body_html_parts.append(f\"<ul>{''.join(additional_info)}</ul>\")\n\n    # Contact info\n    body_html_parts.append(\"\"\"\n    <div style=\"margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px;\">\n        <p><strong>Pentru mai multe informații contactați Autoworld!</strong></p>\n        <p>Toate vehiculele sunt verificate și pregătite pentru livrare.</p>\n    </div>\n    \"\"\")\n    \n    row['Body HTML'] = ''.join(body_html_parts)\n\n    return row\n\n# Process all items\noutput = []\nfor in_item in items:\n    try:\n        record = in_item.get('json', {})\n        output.append({'json': transform_item(record)})\n    except Exception as e:\n        # Log error but continue processing\n        print(f\"Error transforming item: {str(e)}\")\n        continue\n\nreturn output"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        400
+      ],
+      "id": "normalize-data",
+      "name": "Normalize Data",
+      "notes": "Transform Apify data to Shopify format with validation"
+    },
+    {
+      "parameters": {
+        "jsCode": "// OPTIMIZED IMAGE SPLITTER\n// Handles multiple images per product with better validation\n\nconst FIELD_PREFIX = 'Image ';\nconst START_INDEX  = 1;\nconst MAX_IMAGES   = 23;\nconst DELETE_ORIGINAL_IMAGE_FIELDS = true;\n\nconst EXT_OK = /\\.(jpe?g|png|webp|gif|avif|bmp|tiff)(\\?.*)?$/i;\nconst BLOCK  = [/\\/uploads\\/anpc/i, /anpc-(sal|sol)\\.png/i, /placeholder/i, /no-?image/i];\n\nfunction collectAllImageUrls(input) {\n  const out = [];\n  const seen = new Set();\n\n  const push = (u) => {\n    if (!u) return;\n    const s = String(u).trim().replace(/&amp;/g, '&');\n    if (!/^https?:\\/\\//i.test(s)) return;\n    if (!EXT_OK.test(s)) return;\n    if (BLOCK.some((re) => re.test(s))) return;\n    if (!seen.has(s)) { seen.add(s); out.push(s); }\n  };\n\n  const walk = (v) => {\n    if (v == null) return;\n    if (Array.isArray(v)) { v.forEach(walk); return; }\n    if (typeof v === 'object') {\n      if (v.src || v.url || v.href) push(v.src || v.url || v.href);\n      Object.values(v).forEach(walk);\n      return;\n    }\n    if (typeof v === 'string') {\n      try { const parsed = JSON.parse(v); walk(parsed); return; } catch {}\n      const rx = /(https?:\\/\\/[^\\s\"'<>]+?\\.(?:jpe?g|png|webp|gif|avif|bmp|tiff)(?:\\?[^\\s\"'<>]*)?)/ig;\n      let m; while ((m = rx.exec(v))) push(m[1]);\n      return;\n    }\n  };\n\n  walk(input);\n  return out;\n}\n\nreturn items.map(item => {\n  const rec = { ...item.json };\n\n  const sources = [\n    rec['Image Src'], rec.images, rec.image, rec.photos, rec.photo, rec.gallery\n  ];\n\n  let urls = [];\n  sources.forEach(s => { urls = urls.concat(collectAllImageUrls(s)); });\n  urls = [...new Set(urls)].slice(0, MAX_IMAGES);\n\n  urls.forEach((u, i) => {\n    rec[`${FIELD_PREFIX}${START_INDEX + i}`] = u;\n  });\n\n  if (DELETE_ORIGINAL_IMAGE_FIELDS) {\n    delete rec['Image Src'];\n    delete rec.images;\n    delete rec.image;\n    delete rec.photos;\n    delete rec.photo;\n    delete rec.gallery;\n  }\n\n  return { json: rec };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        400
+      ],
+      "id": "split-images",
+      "name": "Split Images",
+      "notes": "Extract and validate image URLs, split into individual fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"query\": \"{ products(first: 250, query: \\\"vendor:Autoworld status:active\\\", sortKey: UPDATED_AT, reverse: true) { pageInfo { hasNextPage endCursor } edges { node { id title handle publishedAt updatedAt variants(first: 250) { edges { node { id sku title price { amount currencyCode } compareAtPrice { amount currencyCode } inventoryQuantity } } } } } } }\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        400
+      ],
+      "id": "shopify-get-products",
+      "name": "Get Shopify Products",
+      "notes": "Fetch existing products with enhanced fields for comparison",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// OPTIMIZED UNIFIED FILTER\n// Handles CREATE, UPDATE, and DEACTIVATE with improved SKU matching\n\nconst normalizeSKU = (raw) => {\n  if (raw == null) return '';\n  return String(raw)\n    .normalize('NFKC')\n    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')\n    .replace(/\\s+/g, '')\n    .trim()\n    .toUpperCase();\n};\n\nconst gidNum = (gid) => String(gid || '').split('/').pop();\n\nconsole.log(\"=== OPTIMIZED UNIFIED FILTER ===\");\n\n// 1) Build Shopify SKU index\nconst shopifyResults = $input.all().map(i => i.json);\nconst shopifySkuMap = new Map();\nlet totalShopifyVariants = 0;\n\nfor (const result of shopifyResults) {\n  const productsData = result?.data?.products;\n  if (!productsData) continue;\n\n  const productEdges = productsData.edges ?? [];\n\n  for (const productEdge of productEdges) {\n    const product = productEdge.node;\n    if (!product) continue;\n\n    const productId = gidNum(product.id);\n    const productTitle = product.title || '';\n    const handle = product.handle || '';\n\n    const variantEdges = product.variants?.edges ?? [];\n    totalShopifyVariants += variantEdges.length;\n\n    for (const variantEdge of variantEdges) {\n      const variant = variantEdge.node;\n      if (!variant) continue;\n\n      const variantId = gidNum(variant.id);\n      const skuRaw = variant.sku ? String(variant.sku).trim() : '';\n      const skuKey = normalizeSKU(skuRaw);\n      \n      if (!skuKey || !variantId) continue;\n\n      // Store only first occurrence\n      if (!shopifySkuMap.has(skuKey)) {\n        shopifySkuMap.set(skuKey, {\n          product_id: productId,\n          variant_id: variantId,\n          handle,\n          product_title: productTitle,\n          variant_title: variant.title || 'Default Title',\n          sku_raw: skuRaw,\n          sku_key: skuKey,\n          price: variant.price?.amount || variant.price || '',\n          compare_at_price: variant.compareAtPrice?.amount || variant.compareAtPrice || '',\n          inventory: variant.inventoryQuantity || 0\n        });\n      }\n    }\n  }\n}\n\nconsole.log(`Shopify: ${totalShopifyVariants} variants → ${shopifySkuMap.size} unique SKUs`);\n\n// 2) Get and deduplicate incoming products\nlet incomingProductsRaw = [];\ntry {\n  const splitImagesItems = $('Split Images').all();\n  incomingProductsRaw = splitImagesItems.map(item => item.json);\n} catch (error) {\n  console.log(`Error accessing Split Images: ${error.message}`);\n  return [{ json: { error: \"Cannot access Split Images data\" } }];\n}\n\nconst incomingSkuMap = new Map();\nconst incomingSKUSet = new Set();\nlet duplicatesRemoved = 0;\n\nfor (const product of incomingProductsRaw) {\n  const skuRaw = String(\n    product['Variant SKU'] ||\n    product.variant_sku ||\n    product.sku ||\n    product.SKU ||\n    ''\n  ).trim();\n  \n  const skuKey = normalizeSKU(skuRaw);\n  \n  if (!skuKey) {\n    // Handle products without SKU separately\n    const uniqueKey = `no_sku_${Math.random().toString(36).substr(2, 9)}`;\n    incomingSkuMap.set(uniqueKey, {\n      ...product,\n      sku_raw: skuRaw,\n      sku_key: '',\n      no_sku: true\n    });\n    continue;\n  }\n  \n  if (incomingSkuMap.has(skuKey)) {\n    duplicatesRemoved++;\n  } else {\n    incomingSkuMap.set(skuKey, {\n      ...product,\n      sku_raw: skuRaw,\n      sku_key: skuKey\n    });\n    incomingSKUSet.add(skuKey);\n  }\n}\n\nconsole.log(`Incoming: ${incomingProductsRaw.length} raw → ${incomingSkuMap.size} unique (${duplicatesRemoved} duplicates removed)`);\n\n// 3) Process CREATE and UPDATE actions\nconst results = [];\nlet createCount = 0;\nlet updateCount = 0;\nlet noSkuCount = 0;\n\nfor (const [key, product] of incomingSkuMap.entries()) {\n  if (product.no_sku) {\n    results.push({\n      json: {\n        ...product,\n        action: 'create',\n        no_sku_warning: true\n      }\n    });\n    createCount++;\n    noSkuCount++;\n    continue;\n  }\n  \n  const skuKey = product.sku_key;\n  const match = shopifySkuMap.get(skuKey);\n  \n  if (match) {\n    // UPDATE\n    results.push({\n      json: {\n        ...product,\n        action: 'update',\n        shopify_product_id: match.product_id,\n        shopify_variant_id: match.variant_id,\n        shopify_handle: match.handle,\n        existing_product_title: match.product_title,\n        existing_variant_title: match.variant_title,\n        existing_price: match.price,\n        existing_compare_at_price: match.compare_at_price\n      }\n    });\n    updateCount++;\n  } else {\n    // CREATE\n    results.push({\n      json: {\n        ...product,\n        action: 'create'\n      }\n    });\n    createCount++;\n  }\n}\n\n// 4) Process DEACTIVATE actions\nlet deactivateCount = 0;\n\nfor (const [skuKey, shopifyData] of shopifySkuMap.entries()) {\n  if (!incomingSKUSet.has(skuKey)) {\n    results.push({\n      json: {\n        action: 'deactivate',\n        shopify_product_id: shopifyData.product_id,\n        shopify_variant_id: shopifyData.variant_id,\n        shopify_handle: shopifyData.handle,\n        product_title: shopifyData.product_title,\n        variant_title: shopifyData.variant_title,\n        sku_raw: shopifyData.sku_raw,\n        sku_key: shopifyData.sku_key,\n        existing_price: shopifyData.price,\n        existing_inventory: shopifyData.inventory,\n        reason: 'SKU not found in source data'\n      }\n    });\n    deactivateCount++;\n  }\n}\n\nconsole.log(`\\n=== RESULTS ===`);\nconsole.log(`CREATE: ${createCount} (${noSkuCount} without SKU)`);\nconsole.log(`UPDATE: ${updateCount}`);\nconsole.log(`DEACTIVATE: ${deactivateCount}`);\nconsole.log(`TOTAL: ${results.length}`);\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        400
+      ],
+      "id": "unified-filter",
+      "name": "Unified Filter",
+      "notes": "Determines CREATE/UPDATE/DEACTIVATE actions with deduplication"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-create",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        300
+      ],
+      "id": "route-by-action-create",
+      "name": "Route: Create?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-update",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        500
+      ],
+      "id": "route-by-action-update",
+      "name": "Route: Update?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-deactivate",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "deactivate",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        700
+      ],
+      "id": "route-by-action-deactivate",
+      "name": "Route: Deactivate?"
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "product",
+        "title": "={{ $json.Title }}",
+        "additionalFields": {
+          "body_html": "={{ $json['Body HTML'] }}",
+          "handle": "={{ $json.Handle }}",
+          "images": "={{ $json.Image_1 ? [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23].filter(i => $json['Image ' + i]).map(i => ({ src: $json['Image ' + i] })) : [] }}",
+          "product_type": "={{ $json.Type }}",
+          "tags": "={{ $json.Tags }}",
+          "template_suffix": "produs_servicii_stoc",
+          "vendor": "Autoworld"
+        }
+      },
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        200
+      ],
+      "id": "create-product",
+      "name": "Create Product",
+      "notes": "Create new product in Shopify",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "KU2N3c1rQr2C0rDE",
+          "name": "Shopify Access Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// OPTIMIZED METAFIELD BUILDER\n// Builds metafields and variant updates for newly created products\n\nconst S = v => (v == null ? '' : String(v).trim());\nconst money = v => {\n  if (v == null || v === '') return null;\n  const s = String(v).replace(/\\s/g, '').replace(',', '.');\n  const m = s.match(/-?\\d+(\\.\\d+)?/);\n  return m ? Number(m[0]).toFixed(2) : null;\n};\n\nconst asListString = val => JSON.stringify([S(val)]);\n\nconst cleanList = raw => {\n  const str = S(raw);\n  return str.replace(/\\s*\\n+\\s*/g, '\\n').replace(/\\s{2,}/g, ' ').replace(/,\\s*,+/g, ', ');\n};\n\nconst mapFuel = (raw) => {\n  const v = (raw || '').toLowerCase().trim();\n  const mapping = {\n    'benzina': 'Benzină',\n    'benzină': 'Benzină',\n    'gasoline': 'Benzină',\n    'petrol': 'Benzină',\n    'diesel': 'Diesel',\n    'hybrid': 'Hybrid',\n    'phev': 'Plug-in Hybrid',\n    'plug-in hybrid': 'Plug-in Hybrid',\n    'electric': 'Electric',\n    'ev': 'Electric',\n    'lpg': 'LPG',\n    'gpl': 'LPG'\n  };\n  return mapping[v] || 'Benzină';\n};\n\nconst createdItems = $input.all();\nconst out = [];\n\nconsole.log(`Processing ${createdItems.length} created products`);\n\n// Get source data from Unified Filter\nlet sourceItems = [];\ntry {\n  sourceItems = $('Unified Filter').all().map(i => i.json);\n  console.log(`Found ${sourceItems.length} source items`);\n} catch (e) {\n  console.log(`Warning: Could not access Unified Filter data: ${e.message}`);\n}\n\n// Build SKU map for matching\nconst skuToSourceMap = new Map();\nfor (const item of sourceItems) {\n  const sku = S(item['Variant SKU'] || item.variant_sku || item.sku || '');\n  if (sku) {\n    skuToSourceMap.set(sku, item);\n  }\n}\n\nfor (let i = 0; i < createdItems.length; i++) {\n  const created = createdItems[i].json || {};\n  const product_id = created.id;\n  const variant_id = created?.variants?.[0]?.id;\n  \n  if (!product_id || !variant_id) {\n    console.log(`ERROR: Missing product_id or variant_id for item ${i}`);\n    continue;\n  }\n  \n  const createdSku = S(created?.variants?.[0]?.sku || '');\n  const row = skuToSourceMap.get(createdSku) || {};\n  \n  if (Object.keys(row).length === 0) {\n    console.log(`Warning: No source data found for SKU \"${createdSku}\"`);\n  }\n  \n  const variant_sku = S(row['Variant SKU'] || row.variant_sku || row.sku || createdSku || '');\n  const variant_price = money(row['Variant Price'] || row.variant_price);\n\n  // Build metafields blueprint\n  let bp = {};\n  if (Object.keys(row).length > 0) {\n    bp = {\n      sku: { type: 'single_line_text_field', value: variant_sku },\n      price_gross: { type: 'number_decimal', value: money(row['Variant Price']) },\n      pret_fara_tva: { type: 'number_decimal', value: money(row['Metafield: custom.pret_fara_tva [single_line_text_field]']) },\n      currency: { type: 'single_line_text_field', value: 'RON' },\n      nr_dos_: { type: 'single_line_text_field', value: S(row['Metafield: custom.nr_dos_ [single_line_text_field]']) },\n      model: { type: 'single_line_text_field', value: S(row['Metafield: custom.model [single_line_text_field]']) },\n      marca: { type: 'single_line_text_field', value: S(row['Metafield: custom.marca [single_line_text_field]']) },\n      putere_kw: { type: 'single_line_text_field', value: S(row['Metafield: custom.putere_kw [single_line_text_field]']) },\n      putere_cp: { type: 'single_line_text_field', value: S(row['Metafield: custom.putere_cp [single_line_text_field]']) },\n      transmisie: { type: 'list.single_line_text_field', value: asListString(row['Metafield: custom.transmisie [list.single_line_text_field]'] || '') },\n      tva: { type: 'single_line_text_field', value: S(row['Metafield: custom.tva [single_line_text_field]']) },\n      cilindree: { type: 'single_line_text_field', value: S(row['Metafield: custom.cilindree [single_line_text_field]']) },\n      cutie_viteze: { type: 'single_line_text_field', value: S(row['Metafield: custom.cutie_viteze [single_line_text_field]']) },\n      culoare: { type: 'single_line_text_field', value: S(row['Metafield: custom.culoare [single_line_text_field]']) },\n      kilometraj: { type: 'single_line_text_field', value: S(row['Metafield: custom.km [single_line_text_field]']) },\n      data_livrarii: { type: 'single_line_text_field', value: S(row['Metafield: custom.data_livrarii [single_line_text_field]']) },\n      body_type: { type: 'single_line_text_field', value: S(row['Metafield: custom.body_type [single_line_text_field]']) },\n      fuel: { type: 'single_line_text_field', value: mapFuel(row['Metafield: custom.fuel [single_line_text_field]']) },\n      dotari: { \n        type: 'multi_line_text_field',\n        value: Array.isArray(row['Metafield: custom.dotari [multi_line_text_field]'])\n          ? cleanList(row['Metafield: custom.dotari [multi_line_text_field]'].join(', '))\n          : cleanList(row['Metafield: custom.dotari [multi_line_text_field]'] || '')\n      }\n    };\n  }\n\n  // Build metafields array\n  const metafields = Object.entries(bp)\n    .filter(([, def]) => def && def.value != null && def.value !== '')\n    .map(([key, def]) => ({\n      ownerId: `gid://shopify/Product/${product_id}`,\n      namespace: 'custom',\n      key,\n      type: def.type,\n      value: String(def.value)\n    }));\n\n  // Build variant update\n  const variant_update = {};\n  if (variant_sku || variant_price) {\n    variant_update.variant = {\n      id: variant_id,\n      ...(variant_sku ? { sku: variant_sku } : {}),\n      ...(variant_price ? { price: variant_price } : {})\n    };\n  }\n\n  const graphql_body = metafields.length > 0 ? {\n    query: `\n      mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {\n        metafieldsSet(metafields: $metafields) {\n          metafields { key namespace value }\n          userErrors { field message code }\n        }\n      }\n    `.trim(),\n    variables: { metafields }\n  } : null;\n\n  out.push({\n    json: {\n      product_id,\n      variant_id,\n      variant_update: Object.keys(variant_update).length > 0 ? variant_update : null,\n      graphql_body,\n      source_sku: variant_sku,\n      has_metafields: metafields.length > 0\n    }\n  });\n}\n\nconsole.log(`Generated ${out.length} metafield updates`);\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        200
+      ],
+      "id": "build-metafields",
+      "name": "Build Metafields",
+      "notes": "Prepare metafields and variant updates for created products"
+    },
+    {
+      "parameters": {
+        "amount": 5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1600,
+        200
+      ],
+      "id": "wait-after-create",
+      "name": "Wait",
+      "notes": "Rate limiting - wait 5 seconds between operations",
+      "webhookId": "optimized-wait-webhook"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://cb6c17-2.myshopify.com/admin/api/2024-07/variants/{{ $json.variant_id }}.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.variant_update }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        200
+      ],
+      "id": "update-variant-sku-price",
+      "name": "Update Variant SKU/Price",
+      "notes": "Update variant with SKU and price",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.graphql_body }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        200
+      ],
+      "id": "set-metafields",
+      "name": "Set Metafields",
+      "notes": "Apply metafields to product via GraphQL",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// OPTIMIZED PRICE UPDATER\n// Compares prices and updates only when needed\n\nconst CONFIG = {\n  PRICE_DIFF_EPS: 0.01,\n  ALLOW_COMPARE_AT_PRICE: true\n};\n\nconst toNum = (v) => {\n  if (v == null) return NaN;\n  const s = String(v).replace(/\\s/g, '').replace(',', '.');\n  const m = s.match(/-?\\d+(?:\\.\\d+)?/);\n  return m ? Number(m[0]) : NaN;\n};\n\nconst to2 = (n) => Number.isFinite(n) ? n.toFixed(2) : null;\n\nconst items = $input.all();\nconst out = [];\n\nlet stats = {\n  total: items.length,\n  noPrice: 0,\n  samePrice: 0,\n  updated: 0,\n  errors: 0\n};\n\nconsole.log(`Processing ${items.length} items for price updates`);\n\nfor (const item of items) {\n  const data = item.json;\n  \n  const incomingPrice = toNum(data['Variant Price'] || data.variant_price || data.price);\n  const existingPrice = toNum(data.existing_price);\n  const existingCompareAt = toNum(data.existing_compare_at_price);\n  \n  if (!Number.isFinite(incomingPrice)) {\n    stats.noPrice++;\n    continue;\n  }\n  \n  if (!Number.isFinite(existingPrice)) {\n    // No existing price, always update\n    const priceStr = to2(incomingPrice);\n    \n    out.push({\n      json: {\n        ...data,\n        action: 'update_price',\n        variant_gid: `gid://shopify/ProductVariant/${data.shopify_variant_id}`,\n        incoming_price: priceStr,\n        price_changed: true,\n        graphql_body: {\n          query: `mutation productVariantUpdate($input: ProductVariantInput!) {\n            productVariantUpdate(input: $input) {\n              productVariant { id price { amount currencyCode } }\n              userErrors { field message }\n            }\n          }`,\n          variables: {\n            input: {\n              id: `gid://shopify/ProductVariant/${data.shopify_variant_id}`,\n              price: priceStr\n            }\n          }\n        }\n      }\n    });\n    stats.updated++;\n    continue;\n  }\n  \n  const priceDiff = Math.abs(incomingPrice - existingPrice);\n  \n  if (priceDiff <= CONFIG.PRICE_DIFF_EPS) {\n    stats.samePrice++;\n    continue;\n  }\n  \n  // Price changed - prepare update\n  const priceStr = to2(incomingPrice);\n  const shouldSetCompareAt = CONFIG.ALLOW_COMPARE_AT_PRICE && \n                              !Number.isFinite(existingCompareAt) && \n                              existingPrice > incomingPrice;\n  \n  const compareAtStr = shouldSetCompareAt ? to2(existingPrice) : undefined;\n  \n  const input = {\n    id: `gid://shopify/ProductVariant/${data.shopify_variant_id}`,\n    price: priceStr\n  };\n  \n  if (compareAtStr) {\n    input.compareAtPrice = compareAtStr;\n  }\n  \n  out.push({\n    json: {\n      ...data,\n      action: 'update_price',\n      variant_gid: `gid://shopify/ProductVariant/${data.shopify_variant_id}`,\n      incoming_price: priceStr,\n      old_price: to2(existingPrice),\n      price_diff: to2(priceDiff),\n      compare_at_price_set: compareAtStr || null,\n      graphql_body: {\n        query: `mutation productVariantUpdate($input: ProductVariantInput!) {\n          productVariantUpdate(input: $input) {\n            productVariant { id price { amount currencyCode } compareAtPrice { amount currencyCode } }\n            userErrors { field message }\n          }\n        }`,\n        variables: { input }\n      }\n    }\n  });\n  stats.updated++;\n}\n\nconsole.log(`\\n=== PRICE UPDATE STATS ===`);\nconsole.log(`Total: ${stats.total}`);\nconsole.log(`No Price: ${stats.noPrice}`);\nconsole.log(`Same Price: ${stats.samePrice}`);\nconsole.log(`Updated: ${stats.updated}`);\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ],
+      "id": "check-price-updates",
+      "name": "Check Price Updates",
+      "notes": "Compare prices and prepare updates only when needed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cb6c17-2.myshopify.com/admin/api/2024-07/graphql.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.graphql_body }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        400
+      ],
+      "id": "update-prices",
+      "name": "Update Prices",
+      "notes": "Execute price updates via GraphQL",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cb6c17-2.myshopify.com/admin/api/2024-07/products/{{ $json.shopify_product_id }}.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "YOUR_SHOPIFY_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"product\": {\n    \"id\": {{ $json.shopify_product_id }},\n    \"status\": \"draft\"\n  }\n}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        600
+      ],
+      "id": "deactivate-products",
+      "name": "Deactivate Products",
+      "notes": "Set products to draft status (deactivate)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -250,
+        250
+      ],
+      "typeVersion": 1,
+      "id": "note-trigger",
+      "name": "Trigger Note",
+      "notes": "OPTIMIZED WORKFLOW\n\nSchedule: Every 15 minutes\n(Reduced from 1 min to minimize API load)\n\nFlow:\n1. Fetch data from Apify\n2. Normalize and validate\n3. Split images\n4. Compare with Shopify\n5. Route by action type\n6. Execute operations"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        950,
+        150
+      ],
+      "typeVersion": 1,
+      "id": "note-routing",
+      "name": "Routing Note",
+      "notes": "SMART ROUTING\n\nUnified Filter determines:\n- CREATE: New products\n- UPDATE: Existing products (price changes)\n- DEACTIVATE: Products no longer in source\n\nEach action flows to its specific handler"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1150,
+        50
+      ],
+      "typeVersion": 1,
+      "id": "note-create-flow",
+      "name": "Create Flow Note",
+      "notes": "CREATE FLOW\n\n1. Create product in Shopify\n2. Build metafields from source\n3. Wait (rate limiting)\n4. Update variant SKU/Price\n5. Set metafields via GraphQL\n\nError handling: Continue on fail"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Apify Dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Apify Dataset": {
+      "main": [
+        [
+          {
+            "node": "Normalize Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Data": {
+      "main": [
+        [
+          {
+            "node": "Split Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Images": {
+      "main": [
+        [
+          {
+            "node": "Get Shopify Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Shopify Products": {
+      "main": [
+        [
+          {
+            "node": "Unified Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unified Filter": {
+      "main": [
+        [
+          {
+            "node": "Route: Create?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route: Update?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route: Deactivate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Create?": {
+      "main": [
+        [
+          {
+            "node": "Create Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Update?": {
+      "main": [
+        [
+          {
+            "node": "Check Price Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Deactivate?": {
+      "main": [
+        [
+          {
+            "node": "Deactivate Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Product": {
+      "main": [
+        [
+          {
+            "node": "Build Metafields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Metafields": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Update Variant SKU/Price",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Variant SKU/Price": {
+      "main": [
+        [
+          {
+            "node": "Set Metafields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Price Updates": {
+      "main": [
+        [
+          {
+            "node": "Update Prices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "timezone": "Europe/Bucharest",
+    "executionTimeout": 3600,
+    "maxExecutionTimeout": 3600,
+    "availableInMCP": true
+  },
+  "versionId": "optimized-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "optimized-instance"
+  },
+  "tags": [
+    {
+      "createdAt": "2024-12-02T00:00:00.000Z",
+      "updatedAt": "2024-12-02T00:00:00.000Z",
+      "id": "optimized",
+      "name": "optimized"
+    }
+  ]
+}
